@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+.env
+.vscode/
+.idea/
+*.log
+data/mailbox.json
+*.egg-info/
+src/*.egg-info/
