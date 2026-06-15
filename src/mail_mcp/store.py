@@ -61,7 +61,7 @@ class MailStore:
         filter_expr, search_term = self._parse_filter_and_search(q)
 
         if filter_expr and search_term:
-            # For mixed conditions, Graph applies date/range filtering, then we do keyword match in-memory.
+            # 混合条件：先用 Graph 的 filter 缩小范围，再在本地做关键词匹配。
             candidate_top = max(size * 5, 50)
             candidate_top = min(candidate_top, 100)
             encoded_filter = quote(filter_expr, safe="()':,=-")
@@ -75,6 +75,7 @@ class MailStore:
             return matched[:size]
 
         if filter_expr:
+            # 纯过滤条件：直接走 $filter（例如 receivedDateTime 时间区间）。
             encoded_filter = quote(filter_expr, safe="()':,=-")
             payload = self._request(
                 "GET",
@@ -84,6 +85,7 @@ class MailStore:
             return [self._map_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
 
         if search_term:
+            # 纯关键词：走 $search，保持与 Outlook 搜索语义一致。
             encoded_search = quote(search_term, safe="")
             payload = self._request(
                 "GET",
@@ -96,10 +98,12 @@ class MailStore:
 
     def _parse_filter_and_search(self, query: str) -> tuple[str | None, str | None]:
         raw = query.strip()
+        # 支持显式标签格式："filter: ... search: ..."。
         tagged = self._parse_tagged_query(raw)
         if tagged is not None:
             return tagged
 
+        # 未显式标注时，尝试把整句识别为 filter；否则按关键词搜索处理。
         if self._looks_like_graph_filter(query):
             return query, None
 
@@ -176,12 +180,26 @@ class MailStore:
         if not draft_id.strip():
             return None
 
+        draft = self._request(
+            "GET",
+            f"{self._mailbox_prefix}/messages/{draft_id}"
+            "?$select=id,subject,bodyPreview,toRecipients,ccRecipients,bccRecipients",
+        )
+
         self._request("POST", f"{self._mailbox_prefix}/messages/{draft_id}/send", expect_json=False)
+
         return {
             "id": draft_id,
             "folder": "sent",
             "sent": True,
             "status": "sent",
+            "sent_summary": {
+                "subject": draft.get("subject", "") or "",
+                "to": _recipient_addresses(draft.get("toRecipients", [])),
+                "cc": _recipient_addresses(draft.get("ccRecipients", [])),
+                "bcc": _recipient_addresses(draft.get("bccRecipients", [])),
+                "bodyPreview": draft.get("bodyPreview", "") or "",
+            },
         }
 
     @property
