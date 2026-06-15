@@ -34,6 +34,29 @@ last_updated: 2026-06-15
 
 * 使用闭开区间：`ge start` 且 `lt end`
 * 统一 UTC 时间
+* 先将自然语言时间词归一化为本地时区日历边界，再转换为 UTC 写入 `$filter`
+
+时间词归一化（必须支持）：
+
+* 本周：以周一 00:00:00 为起点；终点为下周一 00:00:00
+* 今天：当日 00:00:00 到次日 00:00:00
+* 昨天：前一日 00:00:00 到当日 00:00:00
+* 这个月：当月 1 日 00:00:00 到下月 1 日 00:00:00
+
+建议口径：
+
+* 中文语境默认按用户所在时区理解“今天/本周/这个月”，再统一换算为 UTC。
+* 周起始默认周一（ISO-8601）；若用户明确说明“周日为一周起点”，按用户口径覆盖。
+* 禁止把“本周/今天/昨天/这个月”原样塞入 `$search`，必须先落地为 `receivedDateTime` 的 `ge/lt`。
+
+常见查询模板（示意，实际日期按当前时间计算）：
+
+```text
+本周：receivedDateTime ge {week_start_utc} and receivedDateTime lt {next_week_start_utc}
+今天：receivedDateTime ge {today_start_utc} and receivedDateTime lt {tomorrow_start_utc}
+昨天：receivedDateTime ge {yesterday_start_utc} and receivedDateTime lt {today_start_utc}
+这个月：receivedDateTime ge {month_start_utc} and receivedDateTime lt {next_month_start_utc}
+```
 
 示例：查询“上周（2026-06-08 至 2026-06-14）收件箱邮件”
 
@@ -55,12 +78,20 @@ GET /v1.0/me/mailFolders/inbox/messages?
 
 * `filter: receivedDateTime ge ... and receivedDateTime lt ... search: 关键词`
 
+查询执行原则（简版）：
+
+* 能形成时间范围时，优先转成 `receivedDateTime ge ... and receivedDateTime lt ...` 的 `$filter`。
+* 同时有时间范围和关键词时，按“先 `$filter` 再关键词匹配”执行。
+* 仅关键词时可用 `$search`；不要把“本周/今天/昨天/这个月”直接作为 `$search` 日期语法。
+* 复杂或歧义查询先向用户澄清缺失条件（如时间范围、关键词、文件夹）。
+
 工具调用策略：
 
 * 默认优先调用 `mailbox_search`。
 * 仅当查询复杂且含糊（条件缺失、无法形成有效关键词、或需要先浏览目录）时，才调用 `mailbox_list_messages`。
 * 若用户明确给出时间范围，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
-* 同一发送意图只调用一次 `mailbox_compose`；调用完 `mailbox_compose` 之后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复 compose。
+* 回复已有邮件时，优先调用 `mailbox_reply_compose(message_id, body)`，以保留历史上下文引用；不要用 `mailbox_compose` 伪造“回复”。
+* 同一发送意图只调用一次起草工具（`mailbox_compose` 或 `mailbox_reply_compose`）；调用后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复起草。
 * 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并告知发送结果与 summary。若发送成功则告知用户发送成功。
 
 ## 3. 发送前校验（必须）

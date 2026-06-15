@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 import os
 from typing import Any, Callable
 from urllib.parse import quote
@@ -178,6 +179,35 @@ class MailStore:
         result["webLink"] = payload.get("webLink", "")
         return result
 
+    def create_reply_draft(self, message_id: str, body: str) -> dict[str, Any]:
+        if not message_id.strip():
+            raise ValueError("message_id cannot be empty")
+        if not body.strip():
+            raise ValueError("body cannot be empty")
+
+        # createReply 会生成带历史引用的草稿。
+        draft = self._request(
+            "POST",
+            f"{self._mailbox_prefix}/messages/{message_id}/createReply",
+            json={},
+        )
+        draft_id = str(draft.get("id", "") or "").strip()
+        if not draft_id:
+            raise ValueError(f"createReply failed for message: {message_id}")
+
+        quoted_html = str((draft.get("body") or {}).get("content", "") or "")
+        reply_html = self._plain_text_to_html(body)
+        merged_html = f"<div>{reply_html}</div><br/>{quoted_html}" if quoted_html else f"<div>{reply_html}</div>"
+
+        updated = self._request(
+            "PATCH",
+            f"{self._mailbox_prefix}/messages/{draft_id}",
+            json={"body": {"contentType": "HTML", "content": merged_html}},
+        )
+        result = self._map_message(updated, folder="drafts")
+        result["webLink"] = updated.get("webLink", "")
+        return result
+
     def send_draft(self, draft_id: str) -> dict[str, Any] | None:
         if not draft_id.strip():
             return None
@@ -305,6 +335,10 @@ class MailStore:
 
     def _emails_to_recipients(self, emails: list[str]) -> list[dict[str, Any]]:
         return [{"emailAddress": {"address": email}} for email in emails if email.strip()]
+
+    def _plain_text_to_html(self, text: str) -> str:
+        safe = escape(text.strip())
+        return safe.replace("\n", "<br/>")
 
 def _recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
     result: list[str] = []

@@ -95,6 +95,17 @@ def mailbox_compose(
 
 
 @APP.tool()
+def mailbox_reply_compose(message_id: str, body: str) -> dict:
+    """Create a reply draft for an existing message while preserving thread context."""
+    if not message_id.strip():
+        raise ValueError("message_id cannot be empty")
+    if not body.strip():
+        raise ValueError("body cannot be empty")
+
+    return STORE.create_reply_draft(message_id=message_id, body=body)
+
+
+@APP.tool()
 def mailbox_send_draft(draft_id: str) -> dict:
     """Send an existing draft in Outlook mailbox."""
     sent = STORE.send_draft(draft_id=draft_id)
