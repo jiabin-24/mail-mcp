@@ -174,7 +174,9 @@ class MailStore:
                 "bccRecipients": self._emails_to_recipients(bcc or []),
             },
         )
-        return self._map_message(payload, folder="drafts")
+        result = self._map_message(payload, folder="drafts")
+        result["draft_id"] = result.get("id", "")
+        return result
 
     def send_draft(self, draft_id: str) -> dict[str, Any] | None:
         if not draft_id.strip():

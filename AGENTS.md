@@ -60,8 +60,8 @@ GET /v1.0/me/mailFolders/inbox/messages?
 * 默认优先调用 `mailbox_search`。
 * 仅当查询复杂且含糊（条件缺失、无法形成有效关键词、或需要先浏览目录）时，才调用 `mailbox_list_messages`。
 * 若用户明确给出时间范围，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
-* 同一发送意图只调用一次 `mailbox_compose`；若已拿到 `draft_id`，后续仅复用该草稿，不重复 compose。
-* 用户确认发送后，只调用一次 `mailbox_send_draft`，并在回复中展示发送结果与 summary。
+* 同一发送意图只调用一次 `mailbox_compose`；从 `mailbox_compose` 的返回中拿到草稿 `id`，后续仅复用该草稿，不重复 compose。
+* 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并在回复中展示发送结果与 summary。
 
 ## 3. 发送前校验（必须）
 
