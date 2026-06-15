@@ -32,9 +32,9 @@ class MailStore:
             "GET",
             f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(folder)}/messages"
             f"?$top={size}&$orderby=receivedDateTime desc"
-            "&$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime",
+            "&$select=id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime",
         )
-        return [self._map_message(item, folder=folder) for item in payload.get("value", [])]
+        return [self._map_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
 
     def get_message(self, message_id: str) -> dict[str, Any] | None:
         if not message_id.strip():
@@ -135,9 +135,16 @@ class MailStore:
             return {}
         return response.json()
 
-    def _map_message(self, message: dict[str, Any], folder: str | None = None) -> dict[str, Any]:
+    def _map_message(
+        self,
+        message: dict[str, Any],
+        folder: str | None = None,
+        prefer_preview: bool = False,
+    ) -> dict[str, Any]:
         body = message.get("body", {}) or {}
-        return {
+        body_preview = message.get("bodyPreview", "") or ""
+        body_content = body.get("content", "") or ""
+        result = {
             "id": message.get("id", ""),
             "folder": folder or message.get("parentFolderId", ""),
             "from": _recipient_address(message.get("from", {})),
@@ -145,11 +152,14 @@ class MailStore:
             "cc": _recipient_addresses(message.get("ccRecipients", [])),
             "bcc": _recipient_addresses(message.get("bccRecipients", [])),
             "subject": message.get("subject", "") or "",
-            "body": body.get("content", "") or message.get("bodyPreview", "") or "",
+            "bodyPreview": body_preview,
             "sent": not bool(message.get("isDraft", False)),
             "received_at": message.get("receivedDateTime", ""),
             "sent_at": message.get("sentDateTime", ""),
         }
+        if not prefer_preview:
+            result["body"] = body_content or body_preview
+        return result
 
     def _normalize_limit(self, limit: int) -> int:
         return max(1, min(limit, 100))
