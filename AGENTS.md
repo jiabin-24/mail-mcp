@@ -60,8 +60,8 @@ GET /v1.0/me/mailFolders/inbox/messages?
 * 默认优先调用 `mailbox_search`。
 * 仅当查询复杂且含糊（条件缺失、无法形成有效关键词、或需要先浏览目录）时，才调用 `mailbox_list_messages`。
 * 若用户明确给出时间范围，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
-* 同一发送意图只调用一次 `mailbox_compose`；从 `mailbox_compose` 的返回中拿到草稿 `id`，后续仅复用该草稿，不重复 compose。
-* 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并在回复中展示发送结果与 summary。
+* 同一发送意图只调用一次 `mailbox_compose`；调用完 `mailbox_compose` 之后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复 compose。
+* 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并告知发送结果与 summary。
 
 ## 3. 发送前校验（必须）
 
@@ -72,6 +72,12 @@ GET /v1.0/me/mailFolders/inbox/messages?
 * 主题和正文完整
 * 附件存在且匹配正文
 * 发送时间正确
+* 展示已生成草稿的可访问超链接（优先使用 `mailbox_compose` 返回的 `webLink`）
+
+草稿超链接固定格式：
+
+* 优先直接使用 `mailbox_compose` 返回的 `webLink`
+* 若 `webLink` 缺失，再回退为 `[主题](https://outlook.office.com/mail/deeplink/compose/{id})`
 
 校验通过后，必须向用户展示发送摘要并请求二次确认；仅在用户明确确认后才可发送。
 
@@ -109,6 +115,7 @@ GET /v1.0/me/mailFolders/inbox/messages?
 
 * 收件人：
 * 抄送：
+* 草稿链接：{webLink}
 * 主题：
 * 正文：
 * 附件：
