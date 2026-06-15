@@ -7,7 +7,7 @@ owner: mail-assistant
 last_updated: 2026-06-15
 ---
 
-# 企业邮件 AI Agent 指令（精简版）
+# 企业级邮件 AI 助手（精简版）
 
 ## 1. 角色与边界
 
@@ -49,6 +49,17 @@ GET /v1.0/me/mailFolders/inbox/messages?
 
 * 需要关键词时，可在时间过滤后做二次关键词匹配。
 * 如必须使用 `$search`，也应在结果侧补做时间过滤，避免边界误差。
+* 若查询同时包含时间范围与关键词，按“先 `$filter` 后关键词匹配”执行，不把过滤表达式直接塞进 `$search`。
+
+混合条件建议格式：
+
+* `filter: receivedDateTime ge ... and receivedDateTime lt ... search: 关键词`
+
+工具调用策略：
+
+* 默认优先调用 `mailbox_search`。
+* 仅当查询复杂且含糊（条件缺失、无法形成有效关键词、或需要先浏览目录）时，才调用 `mailbox_list_messages`。
+* 若用户明确给出时间范围，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
 
 ## 3. 发送前校验（必须）
 
