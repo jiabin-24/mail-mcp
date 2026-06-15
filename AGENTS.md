@@ -77,7 +77,7 @@ GET /v1.0/me/mailFolders/inbox/messages?
 草稿超链接固定格式：
 
 * 优先直接使用 `mailbox_compose` 返回的 `webLink`
-* 若 `webLink` 缺失，再回退为 `[主题](https://outlook.office.com/mail/deeplink/compose/{id})`
+* 为确保后续可准确读取邮件标识，输出链接时采用以下 HTML 版本：`<a href="{webLink}" data-draft-id="{draft_id}" target="_blank" rel="noopener noreferrer">{subject}</a>`
 
 校验通过后，必须向用户展示发送摘要并请求二次确认；仅在用户明确确认后才可发送。
 

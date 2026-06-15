@@ -175,10 +175,7 @@ class MailStore:
             },
         )
         result = self._map_message(payload, folder="drafts")
-        draft_id = result.get("id", "")
-        result["webLink"] = payload.get("webLink", "") or (
-            f"https://outlook.office.com/mail/deeplink/read/{draft_id}" if draft_id else ""
-        )
+        result["webLink"] = payload.get("webLink", "")
         return result
 
     def send_draft(self, draft_id: str) -> dict[str, Any] | None:
