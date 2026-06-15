@@ -5,7 +5,7 @@
 当前版本实现：
 - MCP 服务入口
 - Outlook 邮箱读写（Microsoft Graph）
-- 常见邮件助手基础工具（列目录、读邮件、搜索、写草稿、发草稿）
+- 常见邮件助手基础工具（列目录、读邮件、搜索、写草稿、发草稿、撤销草稿）
 
 ## 1. 环境准备
 
@@ -131,6 +131,8 @@ mcp.example.com {
   - 生成草稿
 - `mailbox_send_draft(draft_id)`
   - 发送草稿并移到 `sent`
+- `mailbox_revoke_draft(draft_id)`
+  - 撤销草稿（删除草稿）
 
 ## 4. 数据文件
 
@@ -147,7 +149,8 @@ mcp.example.com {
 5. 调用 `mailbox_list_messages` 查看 `inbox`
 6. 调用 `mailbox_get_message` 查看指定邮件正文
 7. 调用 `mailbox_compose` 写邮件草稿
-8. 调用 `mailbox_send_draft` 完成发送
+8. 调用 `mailbox_revoke_draft` 可撤销（删除）草稿
+9. 调用 `mailbox_send_draft` 完成发送
 
 ## 6. 下一步扩展建议
 

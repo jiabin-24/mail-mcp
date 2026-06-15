@@ -204,6 +204,29 @@ class MailStore:
             },
         }
 
+    def revoke_draft(self, draft_id: str) -> dict[str, Any] | None:
+        if not draft_id.strip():
+            return None
+
+        draft = self._request(
+            "GET",
+            f"{self._mailbox_prefix}/messages/{draft_id}"
+            "?$select=id,subject,isDraft,parentFolderId",
+        )
+
+        if not bool(draft.get("isDraft", False)):
+            raise ValueError(f"message is not a draft: {draft_id}")
+
+        self._request("DELETE", f"{self._mailbox_prefix}/messages/{draft_id}", expect_json=False)
+
+        return {
+            "id": draft_id,
+            "revoked": True,
+            "status": "revoked",
+            "folder": draft.get("parentFolderId", "") or "drafts",
+            "subject": draft.get("subject", "") or "",
+        }
+
     @property
     def _mailbox_prefix(self) -> str:
         return "/me"

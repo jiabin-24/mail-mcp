@@ -103,6 +103,15 @@ def mailbox_send_draft(draft_id: str) -> dict:
     return sent
 
 
+@APP.tool()
+def mailbox_revoke_draft(draft_id: str) -> dict:
+    """Revoke (delete) an existing draft in Outlook mailbox."""
+    revoked = STORE.revoke_draft(draft_id=draft_id)
+    if not revoked:
+        raise ValueError(f"draft not found: {draft_id}")
+    return revoked
+
+
 def main() -> None:
     import uvicorn
 
