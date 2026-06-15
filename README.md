@@ -39,7 +39,8 @@ python -m mail_mcp.server
 
 服务会按以下优先级获取 Graph Token：
 
-1. MCP 请求头中的 `Authorization: Bearer <token>`（必须）
+1. MCP 请求头中的 `Authorization: Bearer <token>`（推荐）
+2. 环境变量 `OUTLOOK_ACCESS_TOKEN`（调试兜底）
 
 可选环境变量：
 
@@ -138,7 +139,7 @@ mcp.example.com {
 ## 5. 基本操作方法（开发流程）
 
 1. 启动 MCP 服务（`mail-mcp`）
-2. 确保 MCP Host 调用时携带可用的 Graph Bearer Token
+2. 确保 MCP Host 调用时携带可用的 Graph Bearer Token，或设置 `OUTLOOK_ACCESS_TOKEN`
 3. 在 MCP Host 中连接该服务
   - 本地直连：`http://127.0.0.1:8000/mcp`
   - 经反向代理：`https://mcp.example.com/mcp`

@@ -106,10 +106,10 @@ class MailStore:
         headers: dict[str, str] | None = None,
         expect_json: bool = True,
     ) -> dict[str, Any]:
-        token = self._token_provider()
+        token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
         if not token:
             raise ValueError(
-                "No Outlook token available. Provide bearer token in Authorization header."
+                "No Outlook token available. Provide bearer token in Authorization header or set OUTLOOK_ACCESS_TOKEN."
             )
 
         req_headers = {
