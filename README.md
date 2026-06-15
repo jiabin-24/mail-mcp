@@ -1,10 +1,10 @@
 # Mail MCP (Python + modelcontextprotocol)
 
-这是一个邮件助手 MCP 服务骨架，基于 Python 和官方 MCP Python SDK（`mcp` 包）。
+这是一个邮件助手 MCP 服务，基于 Python 和官方 MCP Python SDK（`mcp` 包），并真实对接 Outlook（Microsoft Graph）。
 
-当前版本先实现：
+当前版本实现：
 - MCP 服务入口
-- 本地邮箱数据存储（JSON）
+- Outlook 邮箱读写（Microsoft Graph）
 - 常见邮件助手基础工具（列目录、读邮件、搜索、写草稿、发草稿）
 
 ## 1. 环境准备
@@ -35,6 +35,23 @@ python -m mail_mcp.server
 
 > 服务进程本身默认使用 HTTP（streamable-http），推荐通过反向代理提供 HTTPS。
 
+### 2.1 Outlook 鉴权配置
+
+服务会按以下优先级获取 Graph Token：
+
+1. MCP 请求头中的 `Authorization: Bearer <token>`（必须）
+
+可选环境变量：
+
+- `GRAPH_BASE_URL`（默认 `https://graph.microsoft.com/v1.0`）
+
+当前实现固定使用 `/me` 路由访问 Outlook 邮箱。
+
+Token 至少需要这些 Graph 权限之一（按你调用场景）：
+
+- 读取邮件：`Mail.Read`
+- 写草稿/发送：`Mail.ReadWrite`, `Mail.Send`
+
 默认地址：
 - Host: `127.0.0.1`
 - Port: `8000`
@@ -61,7 +78,7 @@ $env:MCP_PATH = "/mcp"
 mail-mcp
 ```
 
-### 2.1 通过反向代理提供 HTTPS（推荐）
+### 2.2 通过反向代理提供 HTTPS（推荐）
 
 思路：
 - `mail-mcp` 只监听内网 HTTP（如 `127.0.0.1:8000`）
@@ -116,29 +133,25 @@ mcp.example.com {
 
 ## 4. 数据文件
 
-本地数据在：
-- `data/mailbox.json`
-
-首次启动会自动初始化示例数据。
+当前版本不再使用 `data/mailbox.json` 作为邮件数据源，所有邮件读写均通过 Microsoft Graph 实时访问 Outlook。
 
 ## 5. 基本操作方法（开发流程）
 
 1. 启动 MCP 服务（`mail-mcp`）
-2. 在 MCP Host 中连接该服务
+2. 确保 MCP Host 调用时携带可用的 Graph Bearer Token
+3. 在 MCP Host 中连接该服务
   - 本地直连：`http://127.0.0.1:8000/mcp`
   - 经反向代理：`https://mcp.example.com/mcp`
-3. 调用 `mailbox_list_folders` 查看目录
-4. 调用 `mailbox_list_messages` 查看 `inbox`
-5. 调用 `mailbox_get_message` 查看指定邮件正文
-6. 调用 `mailbox_compose` 写邮件草稿
-7. 调用 `mailbox_send_draft` 完成发送
+4. 调用 `mailbox_list_folders` 查看目录
+5. 调用 `mailbox_list_messages` 查看 `inbox`
+6. 调用 `mailbox_get_message` 查看指定邮件正文
+7. 调用 `mailbox_compose` 写邮件草稿
+8. 调用 `mailbox_send_draft` 完成发送
 
 ## 6. 下一步扩展建议
 
-- 抽象 `MailStore` 为接口，增加真实邮件提供商适配层：
-  - Microsoft Graph（Outlook）
-  - Gmail API
-  - IMAP/SMTP
+- 增加 token 自动刷新（MSAL / OBO）
+- 增加多租户与多邮箱路由策略
 - 增加身份认证与令牌管理
 - 增加邮件标签、附件、线程会话支持
 - 增加安全策略（敏感词、越权校验、审计日志）

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
-from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -10,8 +10,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .store import MailStore
 
 
-ROOT = Path(__file__).resolve().parents[2]
-STORE = MailStore(ROOT / "data" / "mailbox.json")
+CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_access_token", default=None
+)
+STORE = MailStore(token_provider=lambda: CURRENT_ACCESS_TOKEN.get())
 APP = FastMCP(
     "mail-assistant",
     host=os.getenv("MCP_HOST", "127.0.0.1"),
@@ -24,12 +26,20 @@ AUTH_LOGGER = logging.getLogger("mail_mcp.auth")
 class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         authorization = request.headers.get("authorization", "")
+        token_value: str | None = None
         if authorization:
             token = authorization
             if authorization.lower().startswith("bearer "):
                 token = authorization[7:]
-            AUTH_LOGGER.info("delegated_token=%s", token)
-        return await call_next(request)
+            token_preview = token[:12] + "..." if len(token) > 12 else token
+            AUTH_LOGGER.info("delegated_token_preview=%s", token_preview)
+            token_value = token
+
+        token_ctx = CURRENT_ACCESS_TOKEN.set(token_value)
+        try:
+            return await call_next(request)
+        finally:
+            CURRENT_ACCESS_TOKEN.reset(token_ctx)
 
 
 @APP.tool()
@@ -73,7 +83,7 @@ def mailbox_compose(
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
 ) -> dict:
-    """Create a draft message in local mailbox storage."""
+    """Create a draft message in Outlook mailbox."""
     if not to:
         raise ValueError("to cannot be empty")
     if not subject.strip():
@@ -86,7 +96,7 @@ def mailbox_compose(
 
 @APP.tool()
 def mailbox_send_draft(draft_id: str) -> dict:
-    """Send an existing draft and move it to sent folder."""
+    """Send an existing draft in Outlook mailbox."""
     sent = STORE.send_draft(draft_id=draft_id)
     if not sent:
         raise ValueError(f"draft not found: {draft_id}")
