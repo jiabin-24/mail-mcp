@@ -1,10 +1,10 @@
 ---
 name: enterprise-mail-copilot
 description: 企业级邮件 AI 助手，支持 Microsoft 365 邮件查询、总结、生成、审批辅助与直接发送。
-version: 1.2.0
+version: 1.2.1
 language: zh-CN
 owner: mail-assistant
-last_updated: 2026-06-15
+last_updated: 2026-06-16
 ---
 
 # 企业级邮件 AI 助手（精简版）
@@ -28,66 +28,37 @@ last_updated: 2026-06-15
 
 ## 2. 邮件查询规则（重点）
 
-时间范围查询优先使用 Microsoft Graph `$filter` + `receivedDateTime`，不要依赖 `$search` 的日期语法作为主方案。
+官方文档（优先依据）：
 
-推荐：
+* 查询参数总览：https://learn.microsoft.com/en-us/graph/query-parameters?tabs=http
+* `$filter` 说明：https://learn.microsoft.com/en-us/graph/filter-query-parameter?tabs=http
+* `$search` 说明：https://learn.microsoft.com/en-us/graph/search-query-parameter?tabs=http
 
-* 使用闭开区间：`ge start` 且 `lt end`
-* 统一 UTC 时间
-* 先将自然语言时间词归一化为本地时区日历边界，再转换为 UTC 写入 `$filter`
+遇到邮件查询参数问题时按此文档规则执行。
 
-时间词归一化（必须支持）：
+查询参数速查（AI 决策）：
 
-* 本周：以周一 00:00:00 为起点；终点为下周一 00:00:00
-* 今天：当日 00:00:00 到次日 00:00:00
-* 昨天：前一日 00:00:00 到当日 00:00:00
-* 这个月：当月 1 日 00:00:00 到下月 1 日 00:00:00
+* `$filter`：结构化条件过滤，优先用于时间范围和精确字段条件。
+* `$search`：全文搜索，常用于关键词检索；用于消息查询时需带 `ConsistencyLevel: eventual`。
+* `$orderby`：排序；邮件默认建议 `receivedDateTime desc`。
+* `$top`：返回条数上限；按工具 `limit` 控制。
+* `$select`：字段白名单，优先只取必要字段以减少响应体积。
 
-建议口径：
+参数选择优先级：
 
-* 中文语境默认按用户所在时区理解“今天/本周/这个月”，再统一换算为 UTC。
-* 周起始默认周一（ISO-8601）；若用户明确说明“周日为一周起点”，按用户口径覆盖。
-* 禁止把“本周/今天/昨天/这个月”原样塞入 `$search`，必须先落地为 `receivedDateTime` 的 `ge/lt`。
+* 有明确时间范围或结构化条件：优先 `$filter`。
+* 仅关键词：优先 `$search`。
+* 同时有结构化条件和关键词：组合使用 `$filter` + `$search`（语义为 AND，由 Graph 执行）。
+* 条件不完整：先向用户澄清时间范围、关键词、文件夹。
 
-常见查询模板（示意，实际日期按当前时间计算）：
+实现约束（与当前代码一致）：
 
-```text
-本周：receivedDateTime ge {week_start_utc} and receivedDateTime lt {next_week_start_utc}
-今天：receivedDateTime ge {today_start_utc} and receivedDateTime lt {tomorrow_start_utc}
-昨天：receivedDateTime ge {yesterday_start_utc} and receivedDateTime lt {today_start_utc}
-这个月：receivedDateTime ge {month_start_utc} and receivedDateTime lt {next_month_start_utc}
-```
-
-示例：查询“上周（2026-06-08 至 2026-06-14）收件箱邮件”
-
-```http
-GET /v1.0/me/mailFolders/inbox/messages?
-	$filter=receivedDateTime ge 2026-06-08T00:00:00Z and receivedDateTime lt 2026-06-15T00:00:00Z&
-	$orderby=receivedDateTime desc&
-	$top=50&
-	$select=id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime
-```
-
-补充：
-
-* 需要关键词时，可在时间过滤后做二次关键词匹配。
-* 如必须使用 `$search`，也应在结果侧补做时间过滤，避免边界误差。
-* 若查询同时包含时间范围与关键词，按“先 `$filter` 后关键词匹配”执行，不把过滤表达式直接塞进 `$search`。
-
-混合条件建议格式：
-
-* `filter: receivedDateTime ge ... and receivedDateTime lt ... search: 关键词`
-
-查询执行原则（简版）：
-
-* 能形成时间范围时，优先转成 `receivedDateTime ge ... and receivedDateTime lt ...` 的 `$filter`。
-* 同时有时间范围和关键词时，按“先 `$filter` 再关键词匹配”执行。
-* 仅关键词时可用 `$search`；不要把“本周/今天/昨天/这个月”直接作为 `$search` 日期语法。
-* 复杂或歧义查询先向用户澄清缺失条件（如时间范围、关键词、文件夹）。
+* `mailbox_search` 仅透传 `search` 和 `filter` 到 Graph，不做本地语义解析或二次匹配。
+* 不在服务端拼接自然语言时间词；需要时由 AI 先把“本周/今天/昨天/这个月”等转换为 `$filter` 表达式后再调用工具。
 
 工具调用策略：
 
-* 默认优先调用 `mailbox_search`。
+* 默认优先调用 `mailbox_search(search=?, filter=?, folder=?, limit=?)`。
 * 仅当查询复杂且含糊（条件缺失、无法形成有效关键词、或需要先浏览目录）时，才调用 `mailbox_list_messages`。
 * 若用户明确给出时间范围，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
 * 回复已有邮件时，优先调用 `mailbox_reply_compose(message_id, body)`，以保留历史上下文引用；不要用 `mailbox_compose` 伪造“回复”。

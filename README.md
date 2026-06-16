@@ -125,8 +125,8 @@ mcp.example.com {
   - 列出邮件摘要
 - `mailbox_get_message(message_id)`
   - 按 ID 获取邮件详情
-- `mailbox_search(query, folder="inbox", limit=20)`
-  - 关键字搜索邮件
+- `mailbox_search(search=None, filter=None, folder="inbox", limit=20)`
+  - 透传 Graph `$search` / `$filter` 查询邮件
 - `mailbox_compose(to, subject, body, cc=None, bcc=None)`
   - 生成草稿
 - `mailbox_reply_compose(message_id, body)`

@@ -48,113 +48,41 @@ class MailStore:
         )
         return self._map_message(payload)
 
-    def search_messages(self, query: str, folder: str = "inbox", limit: int = 20) -> list[dict[str, Any]]:
-        q = query.strip()
-        if not q:
-            return []
-
+    def search_messages(
+        self,
+        folder: str = "inbox",
+        limit: int = 20,
+        search: str | None = None,
+        filter: str | None = None,
+    ) -> list[dict[str, Any]]:
         size = self._normalize_limit(limit)
         messages_path = f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(folder)}/messages"
         select_clause = (
             "id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,"
             "receivedDateTime,sentDateTime"
         )
-        filter_expr, search_term = self._parse_filter_and_search(q)
+        search_value = (search or "").strip()
+        filter_value = (filter or "").strip()
+        if not search_value and not filter_value:
+            return []
 
-        if filter_expr and search_term:
-            # 混合条件：先用 Graph 的 filter 缩小范围，再在本地做关键词匹配。
-            candidate_top = max(size * 5, 50)
-            candidate_top = min(candidate_top, 100)
-            encoded_filter = quote(filter_expr, safe="()':,=-")
-            payload = self._request(
-                "GET",
-                f"{messages_path}?$filter={encoded_filter}&$top={candidate_top}&$orderby=receivedDateTime desc"
-                f"&$select={select_clause}",
-            )
-            messages = [self._map_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
-            matched = [msg for msg in messages if self._matches_keyword(msg, search_term)]
-            return matched[:size]
+        params: list[str] = [f"$top={size}", f"$select={select_clause}"]
+        if filter_value:
+            encoded_filter = quote(filter_value, safe="()':,=-")
+            params.append(f"$filter={encoded_filter}")
+        if search_value:
+            encoded_search = quote(search_value, safe="()':,=-")
+            params.append(f"$search={encoded_search}")
+        if not search_value:
+            params.append("$orderby=receivedDateTime desc")
 
-        if filter_expr:
-            # 纯过滤条件：直接走 $filter（例如 receivedDateTime 时间区间）。
-            encoded_filter = quote(filter_expr, safe="()':,=-")
-            payload = self._request(
-                "GET",
-                f"{messages_path}?$filter={encoded_filter}&$top={size}&$orderby=receivedDateTime desc"
-                f"&$select={select_clause}",
-            )
-            return [self._map_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
-
-        if search_term:
-            # 纯关键词：走 $search，保持与 Outlook 搜索语义一致。
-            encoded_search = quote(search_term, safe="")
-            payload = self._request(
-                "GET",
-                f"{messages_path}?$search=%22{encoded_search}%22&$top={size}&$select={select_clause}",
-                headers={"ConsistencyLevel": "eventual"},
-            )
-            return [self._map_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
-
-        return []
-
-    def _parse_filter_and_search(self, query: str) -> tuple[str | None, str | None]:
-        raw = query.strip()
-        # 支持显式标签格式："filter: ... search: ..."。
-        tagged = self._parse_tagged_query(raw)
-        if tagged is not None:
-            return tagged
-
-        # 未显式标注时，尝试把整句识别为 filter；否则按关键词搜索处理。
-        if self._looks_like_graph_filter(query):
-            return query, None
-
-        return None, query
-
-    def _parse_tagged_query(self, raw: str) -> tuple[str | None, str | None] | None:
-        lowered = raw.lower()
-        filter_tag = "filter:"
-        search_tag = "search:"
-        filter_idx = lowered.find(filter_tag)
-        search_idx = lowered.find(search_tag)
-
-        if filter_idx == -1 and search_idx == -1:
-            return None
-
-        if filter_idx != -1 and search_idx != -1:
-            if filter_idx < search_idx:
-                filter_expr = raw[filter_idx + len(filter_tag) : search_idx].strip()
-                search_term = raw[search_idx + len(search_tag) :].strip()
-            else:
-                search_term = raw[search_idx + len(search_tag) : filter_idx].strip()
-                filter_expr = raw[filter_idx + len(filter_tag) :].strip()
-            return filter_expr or None, search_term or None
-
-        if filter_idx != -1:
-            return raw[filter_idx + len(filter_tag) :].strip() or None, None
-
-        return None, raw[search_idx + len(search_tag) :].strip() or None
-
-    def _matches_keyword(self, message: dict[str, Any], keyword: str) -> bool:
-        q = keyword.strip().lower()
-        if not q:
-            return True
-        haystack = " ".join(
-            [
-                str(message.get("subject", "") or ""),
-                str(message.get("bodyPreview", "") or ""),
-                str(message.get("from", "") or ""),
-                " ".join(message.get("to", [])),
-                " ".join(message.get("cc", [])),
-                " ".join(message.get("bcc", [])),
-            ]
-        ).lower()
-        return q in haystack
-
-    def _looks_like_graph_filter(self, query: str) -> bool:
-        q = query.lower()
-        has_date_field = "receiveddatetime" in q
-        has_op = any(op in q for op in (" ge ", " gt ", " le ", " lt ", " eq "))
-        return has_date_field and has_op
+        headers = {"ConsistencyLevel": "eventual"} if search_value else None
+        payload = self._request(
+            "GET",
+            f"{messages_path}?{'&'.join(params)}",
+            headers=headers,
+        )
+        return [self._map_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
 
     def create_draft(
         self,

@@ -70,9 +70,14 @@ def mailbox_get_message(message_id: str) -> dict:
 
 
 @APP.tool()
-def mailbox_search(query: str, folder: str = "inbox", limit: int = 20) -> list[dict]:
-    """Search messages by keyword in sender/recipient/subject/body."""
-    return STORE.search_messages(query=query, folder=folder, limit=limit)
+def mailbox_search(
+    search: str | None = None,
+    filter: str | None = None,
+    folder: str = "inbox",
+    limit: int = 20,
+) -> list[dict]:
+    """Search messages with direct Graph $search/$filter passthrough."""
+    return STORE.search_messages(search=search, filter=filter, folder=folder, limit=limit)
 
 
 @APP.tool()
