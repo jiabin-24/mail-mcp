@@ -136,11 +136,7 @@ mcp.example.com {
 - `mailbox_revoke_draft(draft_id)`
   - 撤销草稿（删除草稿）
 
-## 4. 数据文件
-
-当前版本不再使用 `data/mailbox.json` 作为邮件数据源，所有邮件读写均通过 Microsoft Graph 实时访问 Outlook。
-
-## 5. 基本操作方法（开发流程）
+## 4. 基本操作方法（开发流程）
 
 1. 启动 MCP 服务（`mail-mcp`）
 2. 确保 MCP Host 调用时携带可用的 Graph Bearer Token，或设置 `OUTLOOK_ACCESS_TOKEN`
@@ -155,10 +151,38 @@ mcp.example.com {
 9. 调用 `mailbox_revoke_draft` 可撤销（删除）草稿
 10. 调用 `mailbox_send_draft` 完成发送
 
-## 6. 下一步扩展建议
+## 5. Copilot Studio 接入使用
 
-- 增加 token 自动刷新（MSAL / OBO）
-- 增加多租户与多邮箱路由策略
-- 增加身份认证与令牌管理
-- 增加邮件标签、附件、线程会话支持
-- 增加安全策略（敏感词、越权校验、审计日志）
+在 Copilot Studio 添加 MCP Server 时，建议使用 `OAuth 2.0 -> Manual`。
+
+### 5.1 在 Copilot Studio 中添加 MCP Server
+
+1. 打开 Agent 的 Tools，选择 Add a Model Context Protocol server。
+2. 填写基础信息：
+  - Server name：自定义名称（例如 `Mail MCP`）
+  - Server description：服务说明
+  - Server URL：你的 MCP 对外可访问地址（例如 `https://mcp.example.com/mcp`）
+3. Authentication 选择 `OAuth 2.0`。
+4. Type 选择 `Manual`。
+
+### 5.2 OAuth 2.0 (Manual) 关键字段
+
+- Client ID：填写 Entra 应用的 Service Principal 对应的应用（客户端）ID
+- Client secret：填写该应用的密钥
+- Redirect URL：填写 Copilot Studio 给出的回调地址，并确保在 Entra 应用中已配置相同 Redirect URI
+- Authorization URL：`https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/authorize`
+- Token URL：`https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/token`
+
+注意：`{tenant-id}` 必须使用实际租户 ID（GUID）或明确租户域，不要使用 `common`。
+
+### 5.3 建议的权限与 Scope
+
+- Scope 建议至少包含：`offline_access openid profile Mail.Read Mail.ReadWrite Mail.Send`
+- 如果只读场景，可仅保留 `Mail.Read`
+- 这些权限需在 Entra 应用中完成授权（必要时管理员同意）
+
+### 5.4 连通性与安全建议
+
+- MCP Server URL 必须是 Copilot Studio 可访问的 HTTPS 公网地址
+- 如果服务部署在内网，请通过反向代理暴露 HTTPS 入口
+- 建议使用独立应用注册给该 MCP 服务，便于审计和密钥轮换
