@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from html import escape
 import os
 from typing import Any, Callable
@@ -10,6 +11,8 @@ import httpx
 
 class MailStore:
     """Outlook mailbox store backed by Microsoft Graph."""
+
+    _INLINE_ATTACHMENT_MAX_BYTES = 3 * 1024 * 1024
 
     def __init__(self, token_provider: Callable[[], str | None]) -> None:
         self._token_provider = token_provider
@@ -91,6 +94,7 @@ class MailStore:
         body: str,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         payload = self._request(
             "POST",
@@ -103,8 +107,14 @@ class MailStore:
                 "bccRecipients": self._emails_to_recipients(bcc or []),
             },
         )
+        attachment_payloads = self._normalize_attachments(attachments)
+        attachment_names = self._add_attachments_to_message(
+            message_id=str(payload.get("id", "") or "").strip(),
+            attachments=attachment_payloads,
+        )
         result = self._map_message(payload, folder="drafts")
         result["webLink"] = payload.get("webLink", "")
+        result["attachments"] = attachment_names
         return result
 
     def create_reply_draft(self, message_id: str, body: str) -> dict[str, Any]:
@@ -144,6 +154,7 @@ class MailStore:
         body: str | None = None,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         if not draft_id.strip():
             return None
@@ -167,25 +178,42 @@ class MailStore:
             patch_payload["ccRecipients"] = self._emails_to_recipients(cc)
         if bcc is not None:
             patch_payload["bccRecipients"] = self._emails_to_recipients(bcc)
+        attachment_payloads = self._normalize_attachments(attachments)
 
-        if not patch_payload:
-            message = self._request(
-                "GET",
-                f"{self._mailbox_prefix}/messages/{draft_id}"
-                "?$select=id,subject,body,bodyPreview,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime,webLink,parentFolderId",
+        if not patch_payload and not attachment_payloads:
+            return {
+                "id": draft_id,
+                "status": "no_change",
+                "message": "no updates provided",
+                "webLink": current.get("webLink", "") or "",
+            }
+
+        if patch_payload:
+            updated = self._request(
+                "PATCH",
+                f"{self._mailbox_prefix}/messages/{draft_id}",
+                json=patch_payload,
             )
-            result = self._map_message(message, folder="drafts")
-            result["webLink"] = message.get("webLink", "")
+            attachment_names = self._add_attachments_to_message(
+                message_id=draft_id,
+                attachments=attachment_payloads,
+            )
+            result = self._map_message(updated, folder="drafts")
+            result["webLink"] = updated.get("webLink", "")
+            result["attachments"] = attachment_names
             return result
 
-        updated = self._request(
-            "PATCH",
-            f"{self._mailbox_prefix}/messages/{draft_id}",
-            json=patch_payload,
+        attachment_names = self._add_attachments_to_message(
+            message_id=draft_id,
+            attachments=attachment_payloads,
         )
-        result = self._map_message(updated, folder="drafts")
-        result["webLink"] = updated.get("webLink", "")
-        return result
+        return {
+            "id": draft_id,
+            "status": "updated",
+            "message": "attachments added",
+            "webLink": current.get("webLink", "") or "",
+            "attachments": attachment_names,
+        }
 
     def send_draft(self, draft_id: str) -> dict[str, Any] | None:
         if not draft_id.strip():
@@ -318,6 +346,73 @@ class MailStore:
     def _plain_text_to_html(self, text: str) -> str:
         safe = escape(text.strip())
         return safe.replace("\n", "<br/>")
+
+    def _normalize_attachments(self, attachments: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        if not attachments:
+            return []
+
+        result: list[dict[str, Any]] = []
+        for index, item in enumerate(attachments):
+            result.append(self._normalize_attachment_item(index=index, item=item))
+
+        return result
+
+    def _normalize_attachment_item(self, index: int, item: Any) -> dict[str, Any]:
+        if not isinstance(item, dict):
+            raise ValueError(f"attachments[{index}] must be an object")
+
+        name = str(item.get("name", "") or "").strip()
+        if not name:
+            raise ValueError(f"attachments[{index}].name cannot be empty")
+
+        content_base64 = self._extract_attachment_content_base64(index=index, item=item)
+        try:
+            decoded = base64.b64decode(content_base64, validate=True)
+        except ValueError as ex:
+            raise ValueError(f"attachments[{index}] has invalid base64 content") from ex
+
+        if len(decoded) > self._INLINE_ATTACHMENT_MAX_BYTES:
+            raise ValueError(
+                f"attachments[{index}] exceeds {self._INLINE_ATTACHMENT_MAX_BYTES} bytes; "
+                "large-file upload sessions are not supported yet"
+            )
+
+        content_type = str(item.get("contentType") or item.get("content_type") or "").strip()
+        return {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": name,
+            "contentType": content_type or "application/octet-stream",
+            "contentBytes": content_base64,
+        }
+
+    def _extract_attachment_content_base64(self, index: int, item: dict[str, Any]) -> str:
+        content_base64 = str(
+            item.get("contentBytesBase64")
+            or item.get("content_base64")
+            or item.get("contentBytes")
+            or ""
+        ).strip()
+        if not content_base64:
+            raise ValueError(
+                f"attachments[{index}] must provide contentBytesBase64 (or content_base64/contentBytes)"
+            )
+        return content_base64
+
+    def _add_attachments_to_message(self, message_id: str, attachments: list[dict[str, Any]]) -> list[str]:
+        if not attachments:
+            return []
+        if not message_id:
+            raise ValueError("cannot add attachments without a message id")
+
+        added_names: list[str] = []
+        for attachment in attachments:
+            created = self._request(
+                "POST",
+                f"{self._mailbox_prefix}/messages/{message_id}/attachments",
+                json=attachment,
+            )
+            added_names.append(str(created.get("name", "") or attachment.get("name", "")))
+        return added_names
 
 def _recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
     result: list[str] = []
