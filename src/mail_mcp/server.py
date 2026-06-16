@@ -111,6 +111,32 @@ def mailbox_reply_compose(message_id: str, body: str) -> dict:
 
 
 @APP.tool()
+def mailbox_update_draft(
+    draft_id: str,
+    to: list[str] | None = None,
+    subject: str | None = None,
+    body: str | None = None,
+    cc: list[str] | None = None,
+    bcc: list[str] | None = None,
+) -> dict:
+    """Update an existing draft message in Outlook mailbox."""
+    if not draft_id.strip():
+        raise ValueError("draft_id cannot be empty")
+
+    updated = STORE.update_draft(
+        draft_id=draft_id,
+        to=to,
+        subject=subject,
+        body=body,
+        cc=cc,
+        bcc=bcc,
+    )
+    if not updated:
+        raise ValueError(f"draft not found: {draft_id}")
+    return updated
+
+
+@APP.tool()
 def mailbox_send_draft(draft_id: str) -> dict:
     """Send an existing draft in Outlook mailbox."""
     sent = STORE.send_draft(draft_id=draft_id)

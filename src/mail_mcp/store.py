@@ -136,6 +136,57 @@ class MailStore:
         result["webLink"] = updated.get("webLink", "")
         return result
 
+    def update_draft(
+        self,
+        draft_id: str,
+        to: list[str] | None = None,
+        subject: str | None = None,
+        body: str | None = None,
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        if not draft_id.strip():
+            return None
+
+        current = self._request(
+            "GET",
+            f"{self._mailbox_prefix}/messages/{draft_id}"
+            "?$select=id,isDraft,webLink",
+        )
+        if not bool(current.get("isDraft", False)):
+            raise ValueError(f"message is not a draft: {draft_id}")
+
+        patch_payload: dict[str, Any] = {}
+        if subject is not None:
+            patch_payload["subject"] = subject
+        if body is not None:
+            patch_payload["body"] = {"contentType": "Text", "content": body}
+        if to is not None:
+            patch_payload["toRecipients"] = self._emails_to_recipients(to)
+        if cc is not None:
+            patch_payload["ccRecipients"] = self._emails_to_recipients(cc)
+        if bcc is not None:
+            patch_payload["bccRecipients"] = self._emails_to_recipients(bcc)
+
+        if not patch_payload:
+            message = self._request(
+                "GET",
+                f"{self._mailbox_prefix}/messages/{draft_id}"
+                "?$select=id,subject,body,bodyPreview,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime,webLink,parentFolderId",
+            )
+            result = self._map_message(message, folder="drafts")
+            result["webLink"] = message.get("webLink", "")
+            return result
+
+        updated = self._request(
+            "PATCH",
+            f"{self._mailbox_prefix}/messages/{draft_id}",
+            json=patch_payload,
+        )
+        result = self._map_message(updated, folder="drafts")
+        result["webLink"] = updated.get("webLink", "")
+        return result
+
     def send_draft(self, draft_id: str) -> dict[str, Any] | None:
         if not draft_id.strip():
             return None
