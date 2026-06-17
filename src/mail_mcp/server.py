@@ -87,7 +87,6 @@ def mailbox_compose(
     body: str,
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
-    attachments: list[dict] | None = None,
 ) -> dict:
     """Create a draft message in Outlook mailbox."""
     if not to:
@@ -103,7 +102,6 @@ def mailbox_compose(
         body=body,
         cc=cc,
         bcc=bcc,
-        attachments=attachments,
     )
 
 
@@ -126,7 +124,6 @@ def mailbox_update_draft(
     body: str | None = None,
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
-    attachments: list[dict] | None = None,
 ) -> dict:
     """Update an existing draft message in Outlook mailbox."""
     if not draft_id.strip():
@@ -139,7 +136,6 @@ def mailbox_update_draft(
         body=body,
         cc=cc,
         bcc=bcc,
-        attachments=attachments,
     )
     if not updated:
         raise ValueError(f"draft not found: {draft_id}")

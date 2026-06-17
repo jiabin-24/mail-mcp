@@ -127,12 +127,12 @@ mcp.example.com {
   - 按 ID 获取邮件详情
 - `mailbox_search(search=None, filter=None, folder="inbox", limit=20)`
   - 透传 Graph `$search` / `$filter` 查询邮件
-- `mailbox_compose(to, subject, body, cc=None, bcc=None, attachments=None)`
-  - 生成草稿（支持附件上传）
+- `mailbox_compose(to, subject, body, cc=None, bcc=None)`
+  - 生成草稿
 - `mailbox_reply_compose(message_id, body)`
   - 基于原邮件生成回复草稿（自动保留历史上下文引用）
-- `mailbox_update_draft(draft_id, to=None, subject=None, body=None, cc=None, bcc=None, attachments=None)`
-  - 修改现有草稿（支持更新收件人、主题、正文、抄送、密送，并可新增附件）
+- `mailbox_update_draft(draft_id, to=None, subject=None, body=None, cc=None, bcc=None)`
+  - 修改现有草稿（支持更新收件人、主题、正文、抄送、密送）
 - `mailbox_send_draft(draft_id)`
   - 发送草稿并移到 `sent`
 - `mailbox_revoke_draft(draft_id)`
@@ -153,27 +153,6 @@ mcp.example.com {
 9. 调用 `mailbox_update_draft` 可修改已创建草稿
 10. 调用 `mailbox_revoke_draft` 可撤销（删除）草稿
 11. 调用 `mailbox_send_draft` 完成发送
-
-### 4.1 附件参数格式
-
-`mailbox_compose` 和 `mailbox_update_draft` 均支持 `attachments` 参数，格式如下：
-
-```json
-[
-  {
-    "name": "budget.xlsx",
-    "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "contentBytesBase64": "BASE64_ENCODED_CONTENT"
-  }
-]
-```
-
-说明：
-
-- `name`：附件文件名（必填）
-- `contentBytesBase64`：附件内容的 Base64 字符串（必填）
-- `contentType`：MIME 类型（可选，不传默认 `application/octet-stream`）
-- 当前只支持小文件直传（单个附件 <= 3MB）；更大文件需后续补充分片上传
 
 ## 5. Copilot Studio 接入使用
 
