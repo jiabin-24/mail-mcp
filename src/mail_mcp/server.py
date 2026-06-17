@@ -270,7 +270,13 @@ def main() -> None:
     import uvicorn
 
     starlette_app = APP.streamable_http_app()
-    starlette_app.add_route("/mail/upload-attachment", upload_attachment_to_blob, methods=["POST"])
+    mcp_path = APP.settings.streamable_http_path.rstrip("/")
+    if mcp_path:
+        starlette_app.add_route(
+            f"{mcp_path}/mail/upload-attachment",
+            upload_attachment_to_blob,
+            methods=["POST"],
+        )
     starlette_app.add_middleware(OAuthTokenLogMiddleware)
 
     config = uvicorn.Config(

@@ -163,7 +163,7 @@ mcp.example.com {
 
 服务新增接口：
 
-- `POST /mail/upload-attachment`
+- `POST /mcp/mail/upload-attachment`
 
 请求格式：`application/json`
 
