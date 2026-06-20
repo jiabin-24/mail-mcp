@@ -92,7 +92,9 @@ async def upload_attachment_to_blob(request: Request) -> JSONResponse:
         mail_id = _normalize_mail_id(str(payload.get("mail_id", "")))
         filename = _normalize_filename(str(payload.get("filename", "")))
         UPLOAD_LOGGER.debug("upload_attachment parsing | mail_id=%s filename=%s", mail_id, filename)
-        content_bytes = _decode_content_base64(str(payload.get("content_base64", "")))
+        content_base64 = str(payload.get("content_base64", ""))
+        UPLOAD_LOGGER.debug("upload_attachment content_base64=%s", content_base64)
+        content_bytes = _decode_content_base64(content_base64)
         UPLOAD_LOGGER.debug("upload_attachment decoded | size_bytes=%d", len(content_bytes))
         if len(content_bytes) > MAX_UPLOAD_BYTES:
             UPLOAD_LOGGER.warning("upload_attachment size_limit_exceeded | size_bytes=%d max=%d", len(content_bytes), MAX_UPLOAD_BYTES)
