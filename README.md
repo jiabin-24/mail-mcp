@@ -45,9 +45,6 @@ python -m mail_mcp.server
 可选环境变量：
 
 - `GRAPH_BASE_URL`（默认 `https://graph.microsoft.com/v1.0`）
-- `AZURE_STORAGE_ACCOUNT_NAME`（上传附件到 Blob 时必填）
-- `AZURE_STORAGE_ACCOUNT_KEY`（上传附件到 Blob 时必填，使用 Key 认证）
-- `AZURE_STORAGE_CONTAINER`（可选，默认 `mail-attachments`）
 
 当前实现固定使用 `/me` 路由访问 Outlook 邮箱。
 
@@ -158,54 +155,6 @@ mcp.example.com {
 11. 调用 `mailbox_send_draft` 完成发送
 
 ## 5. Copilot Studio 接入使用
-
-## 6. HTTP 文件上传接口（透传到 Azure Blob）
-
-服务新增接口：
-
-- `POST /mcp/mail/upload-attachment`
-
-请求格式：`application/json`
-
-- `mail_id`：邮件 ID（会作为 Blob 路径中的文件夹）
-- `filename`：附件文件名
-- `content_base64`：附件内容（Base64）
-- `content_type`：可选，MIME 类型（默认 `application/octet-stream`）
-- 大小限制：解码后文件大小不得超过 `15 MB`
-
-上传路径规则：
-
-- Blob 名称为：`{mail_id}/{filename}`
-
-返回示例：
-
-```json
-{
-  "ok": true,
-  "mail_id": "AAMkAGI2...",
-  "container": "mail-attachments",
-  "blob_name": "AAMkAGI2.../contract.pdf",
-  "blob_url": "https://<account>.blob.core.windows.net/mail-attachments/AAMkAGI2.../contract.pdf",
-  "size_bytes": 12345
-}
-```
-
-调用示例（PowerShell）：
-
-```powershell
-$contentBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes(".\\contract.pdf"))
-
-$body = @{
-  mail_id = "AAMkAGI2..."
-  filename = "contract.pdf"
-  content_base64 = $contentBase64
-  content_type = "application/pdf"
-} | ConvertTo-Json
-
-Invoke-RestMethod -Method Post "http://127.0.0.1:8000/mail/upload-attachment" `
-  -ContentType "application/json" `
-  -Body $body
-```
 
 在 Copilot Studio 添加 MCP Server 时，建议使用 `OAuth 2.0 -> Manual`。
 
