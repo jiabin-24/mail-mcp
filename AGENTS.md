@@ -64,6 +64,7 @@ last_updated: 2026-06-16
 * 回复已有邮件时，优先调用 `mailbox_reply_compose(message_id, body)`，以保留历史上下文引用；不要用 `mailbox_compose` 伪造“回复”。
 * 同一发送意图只调用一次起草工具（`mailbox_compose` 或 `mailbox_reply_compose`）；调用后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复起草。
 * 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并告知发送结果与 summary。若发送成功则告知用户发送成功。
+* 涉及定时发送邮件草稿时，不直接调用 `mailbox_send_draft`；先调用 `Create email-draft send job`，将草稿 `id` 写入任务表，由后续程序按计划时间自动执行发送。
 
 ## 3. 发送前校验（必须）
 
@@ -82,6 +83,12 @@ last_updated: 2026-06-16
 * 为确保后续可准确读取邮件标识，输出链接时采用以下 HTML 版本：`<a href="{webLink}" data-draft-id="{draft_id}" target="_blank" rel="noopener noreferrer">{subject}</a>`
 
 校验通过后，必须向用户展示发送摘要并请求二次确认；仅在用户明确确认后才可发送。
+
+定时发送执行约束：
+
+* 用户确认定时发送后，必须调用 `Create email-draft send job` 持久化草稿 `id` 与计划发送时间。
+* 计划发送时间在调用工具前必须先将用户本地时间转换为 UTC 时间（建议 ISO 8601，`Z` 结尾）再传入任务表字段。
+* 定时发送链路不在对话内直接发信，发送动作由后续程序自动执行。
 
 ## 4. 审批与附件
 
