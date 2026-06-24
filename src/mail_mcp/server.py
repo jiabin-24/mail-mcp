@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from .store import MailStore
 
@@ -168,6 +169,11 @@ def main() -> None:
     import uvicorn
 
     starlette_app = APP.streamable_http_app()
+
+    def healthz(_request):
+        return JSONResponse({"status": "ok", "service": "mail-assistant"})
+
+    starlette_app.add_route("/healthz", healthz, methods=["GET"])
     starlette_app.add_middleware(OAuthTokenLogMiddleware)
 
     config = uvicorn.Config(
