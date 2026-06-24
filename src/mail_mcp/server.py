@@ -21,8 +21,8 @@ CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVa
 STORE = MailStore(token_provider=lambda: CURRENT_ACCESS_TOKEN.get())
 APP = FastMCP(
     "mail-assistant",
-    host=os.getenv("MCP_HOST", "127.0.0.1"),
-    port=int(os.getenv("MCP_PORT", "8000")),
+    host=os.getenv("MCP_HOST", "0.0.0.0"),
+    port=int(os.getenv("MCP_PORT", os.getenv("PORT", "80"))),
     streamable_http_path=os.getenv("MCP_PATH", "/mcp"),
 )
 AUTH_LOGGER = logging.getLogger("mail_mcp.auth")
@@ -165,19 +165,36 @@ def mailbox_revoke_draft(draft_id: str) -> dict:
     return revoked
 
 
-def main() -> None:
-    import uvicorn
-
+def _build_asgi_app():
     starlette_app = APP.streamable_http_app()
 
     def healthz(_request):
         return JSONResponse({"status": "ok", "service": "mail-assistant"})
 
+    def index(_request):
+        return JSONResponse(
+            {
+                "status": "ok",
+                "service": "mail-assistant",
+                "mcp_path": APP.settings.streamable_http_path,
+                "healthz": "/healthz",
+            }
+        )
+
+    starlette_app.add_route("/", index, methods=["GET"])
     starlette_app.add_route("/healthz", healthz, methods=["GET"])
     starlette_app.add_middleware(OAuthTokenLogMiddleware)
+    return starlette_app
+
+
+app = _build_asgi_app()
+
+
+def main() -> None:
+    import uvicorn
 
     config = uvicorn.Config(
-        starlette_app,
+        app,
         host=APP.settings.host,
         port=APP.settings.port,
         log_level=APP.settings.log_level.lower(),

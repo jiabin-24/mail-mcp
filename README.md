@@ -35,6 +35,52 @@ python -m mail_mcp.server
 
 > 服务进程本身默认使用 HTTP（streamable-http），推荐通过反向代理提供 HTTPS。
 
+### 2.0 通过 Docker 部署到 Azure App Service
+
+仓库已提供 [Dockerfile](Dockerfile) 和 [.dockerignore](.dockerignore)。
+
+服务在容器内默认监听：
+
+- Host: `0.0.0.0`
+- Port: `80`（也兼容 App Service 注入的 `PORT`）
+- MCP Path: `/mcp`
+
+推荐流程：
+
+1. 使用 ACR 云端构建镜像（无需本地 Docker）
+
+```bash
+az acr build \
+  --registry <acr-name> \
+  --image mail-mcp:latest \
+  .
+```
+
+2. （可选）查看 ACR 中镜像标签
+
+```bash
+az acr repository show-tags \
+  --name <acr-name> \
+  --repository mail-mcp \
+  --output table
+```
+
+3. 在 App Service 使用该镜像（Web App for Containers）
+
+- Image source: ACR
+- Image: `<acr-name>.azurecr.io/mail-mcp:latest`
+- Container port: `80`
+- Health check path: `/healthz`
+
+4. MCP 客户端连接地址
+
+- `https://<app-name>.azurewebsites.net/mcp`
+
+5. 部署后验证
+
+- `https://<app-name>.azurewebsites.net/`
+- `https://<app-name>.azurewebsites.net/healthz`
+
 ### 2.1 Outlook 鉴权配置
 
 服务会按以下优先级获取 Graph Token：
@@ -55,9 +101,9 @@ Token 至少需要这些 Graph 权限之一（按你调用场景）：
 
 默认地址：
 - Host: `127.0.0.1`
-- Port: `8000`
+- Port: `80`
 - MCP Path: `/mcp`
-- 后端 URL: `http://127.0.0.1:8000/mcp`
+- 后端 URL: `http://127.0.0.1:80/mcp`
 
 你也可以通过环境变量覆盖：
 
@@ -74,7 +120,7 @@ Windows PowerShell:
 
 ```powershell
 $env:MCP_HOST = "0.0.0.0"
-$env:MCP_PORT = "9000"
+$env:MCP_PORT = "80"
 $env:MCP_PATH = "/mcp"
 mail-mcp
 ```
@@ -82,7 +128,7 @@ mail-mcp
 ### 2.2 通过反向代理提供 HTTPS（推荐）
 
 思路：
-- `mail-mcp` 只监听内网 HTTP（如 `127.0.0.1:8000`）
+- `mail-mcp` 只监听内网 HTTP（如 `127.0.0.1:80`）
 - Nginx/Caddy 对外暴露 443，负责证书和 TLS
 
 Nginx 示例：
@@ -96,7 +142,7 @@ server {
   ssl_certificate_key /etc/letsencrypt/live/mcp.example.com/privkey.pem;
 
   location /mcp {
-    proxy_pass http://127.0.0.1:8000/mcp;
+    proxy_pass http://127.0.0.1:80/mcp;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto https;
@@ -109,7 +155,7 @@ Caddy 示例：
 
 ```caddy
 mcp.example.com {
-  reverse_proxy 127.0.0.1:8000
+  reverse_proxy 127.0.0.1:80
 }
 ```
 
