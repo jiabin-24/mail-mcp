@@ -235,7 +235,7 @@ server {
 
 ### 5.3 建议的权限与 Scope
 
-- Scope 建议至少包含：`offline_access openid profile Mail.Read Mail.ReadWrite Mail.Send Calendars.Read Calendars.ReadWrite`
+- Scope 建议至少包含：`offline_access openid profile User.ReadBasic.All Mail.Read Mail.ReadWrite Mail.Send Calendars.Read Calendars.ReadWrite`
 - 如果只读场景，可仅保留 `Mail.Read`
 - 这些权限需在 Entra 应用中完成授权（必要时管理员同意）
 

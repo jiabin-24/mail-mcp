@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import os
 from typing import Any, Callable
+from urllib.parse import quote
 
 import httpx
+
+
+GRAPH_QUERY_SAFE = "()':,=-"
 
 
 class GraphStoreBase:
@@ -59,26 +63,33 @@ class GraphStoreBase:
 
     def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
         safe_limit = self._normalize_limit(limit)
+        headers = {"ConsistencyLevel": "eventual"}
         query = (
             f"/users?$top={safe_limit}"
+            "&$count=true"
             "&$select=id,displayName,mail,userPrincipalName"
-            "&$filter=mail ne null"
+            f"&$filter={quote('mail ne null', safe=GRAPH_QUERY_SAFE)}"
             "&$orderby=displayName"
         )
 
         search_value = (search or "").strip()
         if search_value:
             escaped = search_value.replace("'", "''")
+            filter_expr = (
+                "mail ne null and "
+                f"(startswith(displayName,'{escaped}') "
+                f"or startswith(mail,'{escaped}') "
+                f"or startswith(userPrincipalName,'{escaped}'))"
+            )
             query = (
                 f"/users?$top={safe_limit}"
+                "&$count=true"
                 "&$select=id,displayName,mail,userPrincipalName"
-                f"&$filter=mail ne null and (startswith(displayName,'{escaped}')"
-                f" or startswith(mail,'{escaped}')"
-                f" or startswith(userPrincipalName,'{escaped}'))"
+                f"&$filter={quote(filter_expr, safe=GRAPH_QUERY_SAFE)}"
                 "&$orderby=displayName"
             )
 
-        payload = self._request("GET", query)
+        payload = self._request("GET", query, headers=headers)
         users = payload.get("value", [])
         return [
             {
