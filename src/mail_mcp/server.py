@@ -8,7 +8,9 @@ from mcp.server.fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
 from .calendar_store import CalendarStore
+from .calendar_tools import register_calendar_tools
 from .email_store import EmailStore
+from .email_tools import register_email_tools
 from .utils.biz_logger import configure_default_loggers
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
@@ -26,158 +28,13 @@ APP = FastMCP(
     port=int(os.getenv("MCP_PORT", os.getenv("PORT", "80"))),
     streamable_http_path=os.getenv("MCP_PATH", "/mcp"),
 )
+register_calendar_tools(APP, CALENDAR_STORE)
+register_email_tools(APP, EMAIL_STORE)
 
 @APP.tool()
 def ping() -> dict[str, str]:
     """Health check tool."""
     return {"status": "ok", "service": "mail-assistant"}
-
-@APP.tool()
-def mailbox_list_folders() -> list[str]:
-    """List available mail folders."""
-    return EMAIL_STORE.list_folders()
-
-@APP.tool()
-def mailbox_list_messages(folder: str = "inbox", limit: int = 20) -> list[dict]:
-    """List messages from a folder."""
-    return EMAIL_STORE.list_messages(folder=folder, limit=limit)
-
-@APP.tool()
-def mailbox_get_message(message_id: str) -> dict:
-    """Get one message by ID."""
-    message = EMAIL_STORE.get_message(message_id)
-    if not message:
-        raise ValueError(f"message not found: {message_id}")
-    return message
-
-@APP.tool()
-def mailbox_search(
-    search: str | None = None,
-    filter: str | None = None,
-    folder: str = "inbox",
-    limit: int = 20,
-) -> list[dict]:
-    """Search messages with direct Graph $search/$filter passthrough."""
-    return EMAIL_STORE.search_messages(search=search, filter=filter, folder=folder, limit=limit)
-
-@APP.tool()
-def calendar_list_events(
-    start: str | None = None,
-    end: str | None = None,
-    search: str | None = None,
-    limit: int = 20,
-) -> list[dict]:
-    """List calendar events, optionally scoped by ISO datetime range and keyword search."""
-    return CALENDAR_STORE.list_calendar_events(start=start, end=end, search=search, limit=limit)
-
-@APP.tool()
-def calendar_create_event(
-    subject: str,
-    start: str,
-    end: str,
-    attendees: list[str] | None = None,
-    description: str | None = None,
-    location: str | None = None,
-    is_all_day: bool = False,
-    time_zone: str = "UTC",
-    calendar_id: str | None = None,
-) -> dict:
-    """Create a calendar event in Outlook mailbox."""
-    if not subject.strip():
-        raise ValueError("subject cannot be empty")
-    if not start.strip():
-        raise ValueError("start cannot be empty")
-    if not end.strip():
-        raise ValueError("end cannot be empty")
-    if not time_zone.strip():
-        raise ValueError("time_zone cannot be empty")
-
-    return CALENDAR_STORE.create_calendar_event(
-        subject=subject,
-        start=start,
-        end=end,
-        attendees=attendees,
-        description=description,
-        location=location,
-        is_all_day=is_all_day,
-        time_zone=time_zone,
-        calendar_id=calendar_id,
-    )
-
-@APP.tool()
-def mailbox_compose(
-    to: list[str],
-    subject: str,
-    body: str,
-    cc: list[str] | None = None,
-    bcc: list[str] | None = None,
-) -> dict:
-    """Create a draft message in Outlook mailbox."""
-    if not to:
-        raise ValueError("to cannot be empty")
-    if not subject.strip():
-        raise ValueError("subject cannot be empty")
-    if not body.strip():
-        raise ValueError("body cannot be empty")
-
-    return EMAIL_STORE.create_draft(
-        to=to,
-        subject=subject,
-        body=body,
-        cc=cc,
-        bcc=bcc,
-    )
-
-@APP.tool()
-def mailbox_reply_compose(message_id: str, body: str) -> dict:
-    """Create a reply draft for an existing message while preserving thread context."""
-    if not message_id.strip():
-        raise ValueError("message_id cannot be empty")
-    if not body.strip():
-        raise ValueError("body cannot be empty")
-
-    return EMAIL_STORE.create_reply_draft(message_id=message_id, body=body)
-
-@APP.tool()
-def mailbox_update_draft(
-    draft_id: str,
-    to: list[str] | None = None,
-    subject: str | None = None,
-    body: str | None = None,
-    cc: list[str] | None = None,
-    bcc: list[str] | None = None,
-) -> dict:
-    """Update an existing draft message in Outlook mailbox."""
-    if not draft_id.strip():
-        raise ValueError("draft_id cannot be empty")
-
-    updated = EMAIL_STORE.update_draft(
-        draft_id=draft_id,
-        to=to,
-        subject=subject,
-        body=body,
-        cc=cc,
-        bcc=bcc,
-    )
-    if not updated:
-        raise ValueError(f"draft not found: {draft_id}")
-    return updated
-
-@APP.tool()
-def mailbox_send_draft(draft_id: str) -> dict:
-    """Send an existing draft in Outlook mailbox."""
-    sent = EMAIL_STORE.send_draft(draft_id=draft_id)
-    if not sent:
-        raise ValueError(f"draft not found: {draft_id}")
-    return sent
-
-@APP.tool()
-def mailbox_revoke_draft(draft_id: str) -> dict:
-    """Revoke (delete) an existing draft in Outlook mailbox."""
-    revoked = EMAIL_STORE.revoke_draft(draft_id=draft_id)
-    if not revoked:
-        raise ValueError(f"draft not found: {draft_id}")
-    return revoked
 
 def _build_asgi_app():
     starlette_app = APP.streamable_http_app()

@@ -6,6 +6,14 @@ from urllib.parse import quote
 
 from .graph_store import GraphStoreBase
 from .models import map_graph_calendar_event
+from .request_models import (
+    CalendarCreateEventInput,
+    CalendarDeleteEventInput,
+    CalendarGetEventInput,
+    CalendarListEventsInput,
+    CalendarRespondInvitationInput,
+    CalendarUpdateEventInput,
+)
 
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -15,51 +23,31 @@ GRAPH_DATETIME_SAFE = "-:.TZ"
 class CalendarStore(GraphStoreBase):
     """Calendar-focused operations backed by Microsoft Graph calendar APIs."""
 
-    def create_calendar_event(
-        self,
-        subject: str,
-        start: str,
-        end: str,
-        attendees: list[str] | None = None,
-        description: str | None = None,
-        location: str | None = None,
-        is_all_day: bool = False,
-        time_zone: str = "UTC",
-        calendar_id: str | None = None,
-    ) -> dict[str, Any]:
-        subject_value = subject.strip()
-        start_value = start.strip()
-        end_value = end.strip()
-        time_zone_value = time_zone.strip()
+    def get_calendar_event(self, req: CalendarGetEventInput) -> dict[str, Any] | None:
+        payload = self._request(
+            "GET",
+            f"{self._event_path(req.event_id, req.calendar_id)}"
+            "?$select=id,subject,bodyPreview,organizer,attendees,start,end,location,isAllDay,webLink",
+        )
+        return map_graph_calendar_event(payload)
 
-        if not subject_value:
-            raise ValueError("subject cannot be empty")
-        if not start_value:
-            raise ValueError("start cannot be empty")
-        if not end_value:
-            raise ValueError("end cannot be empty")
-        if not time_zone_value:
-            raise ValueError("time_zone cannot be empty")
-
+    def create_calendar_event(self, req: CalendarCreateEventInput) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "subject": subject_value,
-            "start": {"dateTime": start_value, "timeZone": time_zone_value},
-            "end": {"dateTime": end_value, "timeZone": time_zone_value},
-            "isAllDay": bool(is_all_day),
-            "attendees": self._emails_to_attendees(attendees or []),
+            "subject": req.subject,
+            "start": {"dateTime": req.start, "timeZone": req.time_zone},
+            "end": {"dateTime": req.end, "timeZone": req.time_zone},
+            "isAllDay": bool(req.is_all_day),
+            "attendees": self._emails_to_attendees(req.attendees or []),
         }
 
-        description_value = (description or "").strip()
-        if description_value:
-            payload["body"] = {"contentType": "Text", "content": description_value}
+        if req.description:
+            payload["body"] = {"contentType": "Text", "content": req.description}
 
-        location_value = (location or "").strip()
-        if location_value:
-            payload["location"] = {"displayName": location_value}
+        if req.location:
+            payload["location"] = {"displayName": req.location}
 
-        calendar_id_value = (calendar_id or "").strip()
-        if calendar_id_value:
-            path = f"{self._mailbox_prefix}/calendars/{calendar_id_value}/events"
+        if req.calendar_id:
+            path = f"{self._mailbox_prefix}/calendars/{req.calendar_id}/events"
         else:
             path = f"{self._mailbox_prefix}/events"
 
@@ -70,20 +58,79 @@ class CalendarStore(GraphStoreBase):
         )
         return map_graph_calendar_event(created)
 
-    def list_calendar_events(
-        self,
-        limit: int = 20,
-        search: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> list[dict[str, Any]]:
-        size = self._normalize_limit(limit)
-        search_value = (search or "").strip()
-        start_value = (start or "").strip()
-        end_value = (end or "").strip()
+    def update_calendar_event(self, req: CalendarUpdateEventInput) -> dict[str, Any] | None:
+        start_value = req.start
+        end_value = req.end
 
-        if bool(start_value) != bool(end_value):
-            raise ValueError("start and end must be provided together")
+        patch_payload: dict[str, Any] = {}
+        if req.subject is not None:
+            patch_payload["subject"] = req.subject
+        if start_value and end_value:
+            patch_payload["start"] = {"dateTime": start_value, "timeZone": req.time_zone}
+            patch_payload["end"] = {"dateTime": end_value, "timeZone": req.time_zone}
+        if req.attendees is not None:
+            patch_payload["attendees"] = self._emails_to_attendees(req.attendees)
+        if req.description is not None:
+            patch_payload["body"] = {"contentType": "Text", "content": req.description}
+        if req.location is not None:
+            patch_payload["location"] = {"displayName": req.location}
+        if req.is_all_day is not None:
+            patch_payload["isAllDay"] = bool(req.is_all_day)
+
+        if not patch_payload:
+            return {
+                "id": req.event_id,
+                "status": "no_change",
+                "message": "no updates provided",
+            }
+
+        updated = self._request(
+            "PATCH",
+            self._event_path(req.event_id, req.calendar_id),
+            json=patch_payload,
+        )
+        return map_graph_calendar_event(updated)
+
+    def delete_calendar_event(self, req: CalendarDeleteEventInput) -> dict[str, Any] | None:
+        self._request("DELETE", self._event_path(req.event_id, req.calendar_id), expect_json=False)
+        return {
+            "id": req.event_id,
+            "deleted": True,
+            "status": "deleted",
+        }
+
+    def respond_calendar_invitation(self, req: CalendarRespondInvitationInput) -> dict[str, Any] | None:
+        response_value = req.response.lower()
+
+        action_map = {
+            "accept": "accept",
+            "decline": "decline",
+            "tentative": "tentativelyAccept",
+        }
+        graph_action = action_map[response_value]
+
+        payload = {
+            "comment": req.comment or "",
+            "sendResponse": bool(req.send_response),
+        }
+        self._request(
+            "POST",
+            f"{self._event_path(req.event_id, req.calendar_id)}/{graph_action}",
+            json=payload,
+            expect_json=False,
+        )
+        return {
+            "id": req.event_id,
+            "status": "responded",
+            "response": response_value,
+            "sendResponse": bool(req.send_response),
+        }
+
+    def list_calendar_events(self, req: CalendarListEventsInput) -> list[dict[str, Any]]:
+        size = self._normalize_limit(req.limit)
+        search_value = req.search or ""
+        start_value = req.start or ""
+        end_value = req.end or ""
 
         select_clause = "id,subject,bodyPreview,organizer,attendees,start,end,location,isAllDay,webLink"
         params: list[str] = [f"$top={size}", "$orderby=start/dateTime", f"$select={select_clause}"]
@@ -126,3 +173,9 @@ class CalendarStore(GraphStoreBase):
                 }
             )
         return attendees
+
+    def _event_path(self, event_id: str, calendar_id: str | None = None) -> str:
+        calendar_id_value = (calendar_id or "").strip()
+        if calendar_id_value:
+            return f"{self._mailbox_prefix}/calendars/{calendar_id_value}/events/{event_id}"
+        return f"{self._mailbox_prefix}/events/{event_id}"

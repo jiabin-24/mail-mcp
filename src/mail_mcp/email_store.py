@@ -6,6 +6,15 @@ from urllib.parse import quote
 
 from .graph_store import GraphStoreBase, recipient_addresses
 from .models import map_graph_message
+from .request_models import (
+    MailboxComposeInput,
+    MailboxDraftIdInput,
+    MailboxGetMessageInput,
+    MailboxListMessagesInput,
+    MailboxReplyComposeInput,
+    MailboxSearchInput,
+    MailboxUpdateDraftInput,
+)
 
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -27,45 +36,35 @@ class EmailStore(GraphStoreBase):
             names.append(well_known or display_name)
         return [name for name in names if name]
 
-    def list_messages(self, folder: str = "inbox", limit: int = 20) -> list[dict[str, Any]]:
-        size = self._normalize_limit(limit)
+    def list_messages(self, req: MailboxListMessagesInput) -> list[dict[str, Any]]:
         payload = self._request(
             "GET",
-            f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(folder)}/messages"
-            f"?$top={size}&$orderby=receivedDateTime desc"
+            f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(req.folder)}/messages"
+            f"?$top={self._normalize_limit(req.limit)}&$orderby=receivedDateTime desc"
             "&$select=id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime",
         )
-        return [map_graph_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
+        return [map_graph_message(item, folder=req.folder, prefer_preview=True) for item in payload.get("value", [])]
 
-    def get_message(self, message_id: str) -> dict[str, Any] | None:
-        if not message_id.strip():
-            return None
+    def get_message(self, req: MailboxGetMessageInput) -> dict[str, Any] | None:
         payload = self._request(
             "GET",
-            f"{self._mailbox_prefix}/messages/{message_id}"
+            f"{self._mailbox_prefix}/messages/{req.message_id}"
             "?$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime,parentFolderId",
         )
         return map_graph_message(payload)
 
-    def search_messages(
-        self,
-        folder: str = "inbox",
-        limit: int = 20,
-        search: str | None = None,
-        filter: str | None = None,
-    ) -> list[dict[str, Any]]:
-        size = self._normalize_limit(limit)
-        messages_path = f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(folder)}/messages"
+    def search_messages(self, req: MailboxSearchInput) -> list[dict[str, Any]]:
+        messages_path = f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(req.folder)}/messages"
         select_clause = (
             "id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,"
             "receivedDateTime,sentDateTime"
         )
-        search_value = (search or "").strip()
-        filter_value = (filter or "").strip()
+        search_value = (req.search or "").strip()
+        filter_value = (req.filter or "").strip()
         if not search_value and not filter_value:
             return []
 
-        params: list[str] = [f"$top={size}", f"$select={select_clause}"]
+        params: list[str] = [f"$top={self._normalize_limit(req.limit)}", f"$select={select_clause}"]
         if filter_value:
             encoded_filter = quote(filter_value, safe=GRAPH_QUERY_SAFE)
             params.append(f"$filter={encoded_filter}")
@@ -81,25 +80,18 @@ class EmailStore(GraphStoreBase):
             f"{messages_path}?{'&'.join(params)}",
             headers=headers,
         )
-        return [map_graph_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
+        return [map_graph_message(item, folder=req.folder, prefer_preview=True) for item in payload.get("value", [])]
 
-    def create_draft(
-        self,
-        to: list[str],
-        subject: str,
-        body: str,
-        cc: list[str] | None = None,
-        bcc: list[str] | None = None,
-    ) -> dict[str, Any]:
+    def create_draft(self, req: MailboxComposeInput) -> dict[str, Any]:
         payload = self._request(
             "POST",
             f"{self._mailbox_prefix}/messages",
             json={
-                "subject": subject,
-                "body": {"contentType": "Text", "content": body},
-                "toRecipients": self._emails_to_recipients(to),
-                "ccRecipients": self._emails_to_recipients(cc or []),
-                "bccRecipients": self._emails_to_recipients(bcc or []),
+                "subject": req.subject,
+                "body": {"contentType": "Text", "content": req.body},
+                "toRecipients": self._emails_to_recipients(req.to),
+                "ccRecipients": self._emails_to_recipients(req.cc or []),
+                "bccRecipients": self._emails_to_recipients(req.bcc or []),
             },
         )
         result = map_graph_message(payload, folder="drafts")
@@ -107,23 +99,18 @@ class EmailStore(GraphStoreBase):
         result["webLink"] = payload.get("webLink", "")
         return result
 
-    def create_reply_draft(self, message_id: str, body: str) -> dict[str, Any]:
-        if not message_id.strip():
-            raise ValueError("message_id cannot be empty")
-        if not body.strip():
-            raise ValueError("body cannot be empty")
-
+    def create_reply_draft(self, req: MailboxReplyComposeInput) -> dict[str, Any]:
         draft = self._request(
             "POST",
-            f"{self._mailbox_prefix}/messages/{message_id}/createReply",
+            f"{self._mailbox_prefix}/messages/{req.message_id}/createReply",
             json={},
         )
-        draft_id = str(draft.get("id", "") or "").strip()
+        draft_id = str(draft.get("id", "") or "")
         if not draft_id:
-            raise ValueError(f"createReply failed for message: {message_id}")
+            raise ValueError(f"createReply failed for message: {req.message_id}")
 
         quoted_html = str((draft.get("body") or {}).get("content", "") or "")
-        reply_html = self._plain_text_to_html(body)
+        reply_html = self._plain_text_to_html(req.body)
         merged_html = f"<div>{reply_html}</div><br/>{quoted_html}" if quoted_html else f"<div>{reply_html}</div>"
 
         updated = self._request(
@@ -135,41 +122,30 @@ class EmailStore(GraphStoreBase):
         result["webLink"] = updated.get("webLink", "")
         return result
 
-    def update_draft(
-        self,
-        draft_id: str,
-        to: list[str] | None = None,
-        subject: str | None = None,
-        body: str | None = None,
-        cc: list[str] | None = None,
-        bcc: list[str] | None = None,
-    ) -> dict[str, Any] | None:
-        if not draft_id.strip():
-            return None
-
+    def update_draft(self, req: MailboxUpdateDraftInput) -> dict[str, Any] | None:
         current = self._request(
             "GET",
-            f"{self._mailbox_prefix}/messages/{draft_id}"
+            f"{self._mailbox_prefix}/messages/{req.draft_id}"
             "?$select=id,isDraft,webLink",
         )
         if not bool(current.get("isDraft", False)):
-            raise ValueError(f"message is not a draft: {draft_id}")
+            raise ValueError(f"message is not a draft: {req.draft_id}")
 
         patch_payload: dict[str, Any] = {}
-        if subject is not None:
-            patch_payload["subject"] = subject
-        if body is not None:
-            patch_payload["body"] = {"contentType": "Text", "content": body}
-        if to is not None:
-            patch_payload["toRecipients"] = self._emails_to_recipients(to)
-        if cc is not None:
-            patch_payload["ccRecipients"] = self._emails_to_recipients(cc)
-        if bcc is not None:
-            patch_payload["bccRecipients"] = self._emails_to_recipients(bcc)
+        if req.subject is not None:
+            patch_payload["subject"] = req.subject
+        if req.body is not None:
+            patch_payload["body"] = {"contentType": "Text", "content": req.body}
+        if req.to is not None:
+            patch_payload["toRecipients"] = self._emails_to_recipients(req.to)
+        if req.cc is not None:
+            patch_payload["ccRecipients"] = self._emails_to_recipients(req.cc)
+        if req.bcc is not None:
+            patch_payload["bccRecipients"] = self._emails_to_recipients(req.bcc)
 
         if not patch_payload:
             return {
-                "id": draft_id,
+                "id": req.draft_id,
                 "status": "no_change",
                 "message": "no updates provided",
                 "webLink": current.get("webLink", "") or "",
@@ -177,27 +153,24 @@ class EmailStore(GraphStoreBase):
 
         updated = self._request(
             "PATCH",
-            f"{self._mailbox_prefix}/messages/{draft_id}",
+            f"{self._mailbox_prefix}/messages/{req.draft_id}",
             json=patch_payload,
         )
         result = map_graph_message(updated, folder="drafts")
         result["webLink"] = updated.get("webLink", "")
         return result
 
-    def send_draft(self, draft_id: str) -> dict[str, Any] | None:
-        if not draft_id.strip():
-            return None
-
+    def send_draft(self, req: MailboxDraftIdInput) -> dict[str, Any] | None:
         draft = self._request(
             "GET",
-            f"{self._mailbox_prefix}/messages/{draft_id}"
+            f"{self._mailbox_prefix}/messages/{req.draft_id}"
             "?$select=id,subject,bodyPreview,toRecipients,ccRecipients,bccRecipients",
         )
 
-        self._request("POST", f"{self._mailbox_prefix}/messages/{draft_id}/send", expect_json=False)
+        self._request("POST", f"{self._mailbox_prefix}/messages/{req.draft_id}/send", expect_json=False)
 
         return {
-            "id": draft_id,
+            "id": req.draft_id,
             "folder": "sent",
             "sent": True,
             "status": "sent",
@@ -210,23 +183,20 @@ class EmailStore(GraphStoreBase):
             },
         }
 
-    def revoke_draft(self, draft_id: str) -> dict[str, Any] | None:
-        if not draft_id.strip():
-            return None
-
+    def revoke_draft(self, req: MailboxDraftIdInput) -> dict[str, Any] | None:
         draft = self._request(
             "GET",
-            f"{self._mailbox_prefix}/messages/{draft_id}"
+            f"{self._mailbox_prefix}/messages/{req.draft_id}"
             "?$select=id,subject,isDraft,parentFolderId",
         )
 
         if not bool(draft.get("isDraft", False)):
-            raise ValueError(f"message is not a draft: {draft_id}")
+            raise ValueError(f"message is not a draft: {req.draft_id}")
 
-        self._request("DELETE", f"{self._mailbox_prefix}/messages/{draft_id}", expect_json=False)
+        self._request("DELETE", f"{self._mailbox_prefix}/messages/{req.draft_id}", expect_json=False)
 
         return {
-            "id": draft_id,
+            "id": req.draft_id,
             "revoked": True,
             "status": "revoked",
             "folder": draft.get("parentFolderId", "") or "drafts",
