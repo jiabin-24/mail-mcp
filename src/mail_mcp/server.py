@@ -27,6 +27,24 @@ APP = FastMCP(
 )
 AUTH_LOGGER = logging.getLogger("mail_mcp.auth")
 
+def _configure_namespace_logger(namespace: str, handler_name: str) -> None:
+    """Ensure logs in a namespace are consistently prefixed with level name."""
+    logger = logging.getLogger(namespace)
+    logger.setLevel(logging.INFO)
+
+    for existing in logger.handlers:
+        if existing.get_name() == handler_name:
+            return
+
+    handler = logging.StreamHandler()
+    handler.set_name(handler_name)
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(handler)
+    logger.propagate = False
+
+_configure_namespace_logger("mcp", "mail_mcp_mcp_stream_handler")
+_configure_namespace_logger("mail_mcp", "mail_mcp_namespace_stream_handler")
+
 class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         authorization = request.headers.get("authorization", "")
