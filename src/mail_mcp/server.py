@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import contextvars
-import logging
 import os
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from .calendar_store import CalendarStore
 from .email_store import EmailStore
+from .utils.biz_logger import configure_default_loggers
+from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
 load_dotenv(override=False)
+configure_default_loggers()
 
 CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_access_token", default=None
@@ -25,43 +26,6 @@ APP = FastMCP(
     port=int(os.getenv("MCP_PORT", os.getenv("PORT", "80"))),
     streamable_http_path=os.getenv("MCP_PATH", "/mcp"),
 )
-AUTH_LOGGER = logging.getLogger("mail_mcp.auth")
-
-def _configure_namespace_logger(namespace: str, handler_name: str) -> None:
-    """Ensure logs in a namespace are consistently prefixed with level name."""
-    logger = logging.getLogger(namespace)
-    logger.setLevel(logging.INFO)
-
-    for existing in logger.handlers:
-        if existing.get_name() == handler_name:
-            return
-
-    handler = logging.StreamHandler()
-    handler.set_name(handler_name)
-    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-    logger.addHandler(handler)
-    logger.propagate = False
-
-_configure_namespace_logger("mcp", "mail_mcp_mcp_stream_handler")
-_configure_namespace_logger("mail_mcp", "mail_mcp_namespace_stream_handler")
-
-class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        authorization = request.headers.get("authorization", "")
-        token_value: str | None = None
-        if authorization:
-            token = authorization
-            if authorization.lower().startswith("bearer "):
-                token = authorization[7:]
-            token_preview = token[:12] + "..." if len(token) > 12 else token
-            AUTH_LOGGER.info("delegated_token_preview=%s", token_preview)
-            token_value = token
-
-        token_ctx = CURRENT_ACCESS_TOKEN.set(token_value)
-        try:
-            return await call_next(request)
-        finally:
-            CURRENT_ACCESS_TOKEN.reset(token_ctx)
 
 @APP.tool()
 def ping() -> dict[str, str]:
@@ -199,7 +163,10 @@ def _build_asgi_app():
 
     starlette_app.add_route("/", index, methods=["GET"])
     starlette_app.add_route("/healthz", healthz, methods=["GET"])
-    starlette_app.add_middleware(OAuthTokenLogMiddleware)
+    starlette_app.add_middleware(
+        OAuthTokenLogMiddleware,
+        token_context=CURRENT_ACCESS_TOKEN,
+    )
     return starlette_app
 
 app = _build_asgi_app()
