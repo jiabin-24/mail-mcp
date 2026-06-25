@@ -12,9 +12,7 @@ from starlette.responses import JSONResponse
 from .calendar_store import CalendarStore
 from .email_store import EmailStore
 
-
 load_dotenv(override=False)
-
 
 CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_access_token", default=None
@@ -28,7 +26,6 @@ APP = FastMCP(
     streamable_http_path=os.getenv("MCP_PATH", "/mcp"),
 )
 AUTH_LOGGER = logging.getLogger("mail_mcp.auth")
-
 
 class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -48,24 +45,20 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
         finally:
             CURRENT_ACCESS_TOKEN.reset(token_ctx)
 
-
 @APP.tool()
 def ping() -> dict[str, str]:
     """Health check tool."""
     return {"status": "ok", "service": "mail-assistant"}
-
 
 @APP.tool()
 def mailbox_list_folders() -> list[str]:
     """List available mail folders."""
     return EMAIL_STORE.list_folders()
 
-
 @APP.tool()
 def mailbox_list_messages(folder: str = "inbox", limit: int = 20) -> list[dict]:
     """List messages from a folder."""
     return EMAIL_STORE.list_messages(folder=folder, limit=limit)
-
 
 @APP.tool()
 def mailbox_get_message(message_id: str) -> dict:
@@ -74,7 +67,6 @@ def mailbox_get_message(message_id: str) -> dict:
     if not message:
         raise ValueError(f"message not found: {message_id}")
     return message
-
 
 @APP.tool()
 def mailbox_search(
@@ -86,7 +78,6 @@ def mailbox_search(
     """Search messages with direct Graph $search/$filter passthrough."""
     return EMAIL_STORE.search_messages(search=search, filter=filter, folder=folder, limit=limit)
 
-
 @APP.tool()
 def calendar_list_events(
     start: str | None = None,
@@ -96,7 +87,6 @@ def calendar_list_events(
 ) -> list[dict]:
     """List calendar events, optionally scoped by ISO datetime range and keyword search."""
     return CALENDAR_STORE.list_calendar_events(start=start, end=end, search=search, limit=limit)
-
 
 @APP.tool()
 def mailbox_compose(
@@ -122,7 +112,6 @@ def mailbox_compose(
         bcc=bcc,
     )
 
-
 @APP.tool()
 def mailbox_reply_compose(message_id: str, body: str) -> dict:
     """Create a reply draft for an existing message while preserving thread context."""
@@ -132,7 +121,6 @@ def mailbox_reply_compose(message_id: str, body: str) -> dict:
         raise ValueError("body cannot be empty")
 
     return EMAIL_STORE.create_reply_draft(message_id=message_id, body=body)
-
 
 @APP.tool()
 def mailbox_update_draft(
@@ -159,7 +147,6 @@ def mailbox_update_draft(
         raise ValueError(f"draft not found: {draft_id}")
     return updated
 
-
 @APP.tool()
 def mailbox_send_draft(draft_id: str) -> dict:
     """Send an existing draft in Outlook mailbox."""
@@ -168,7 +155,6 @@ def mailbox_send_draft(draft_id: str) -> dict:
         raise ValueError(f"draft not found: {draft_id}")
     return sent
 
-
 @APP.tool()
 def mailbox_revoke_draft(draft_id: str) -> dict:
     """Revoke (delete) an existing draft in Outlook mailbox."""
@@ -176,7 +162,6 @@ def mailbox_revoke_draft(draft_id: str) -> dict:
     if not revoked:
         raise ValueError(f"draft not found: {draft_id}")
     return revoked
-
 
 def _build_asgi_app():
     starlette_app = APP.streamable_http_app()
@@ -199,9 +184,7 @@ def _build_asgi_app():
     starlette_app.add_middleware(OAuthTokenLogMiddleware)
     return starlette_app
 
-
 app = _build_asgi_app()
-
 
 def main() -> None:
     import uvicorn
@@ -214,7 +197,6 @@ def main() -> None:
     )
     server = uvicorn.Server(config)
     server.run()
-
 
 if __name__ == "__main__":
     main()
