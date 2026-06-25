@@ -28,7 +28,7 @@ class ColorLevelFormatter(logging.Formatter):
         else:
             prefix = f"{record.levelname}:"
 
-        return f"{prefix}    {message}"
+        return f"{prefix}     {message}"
 
 
 def configure_namespace_logger(namespace: str, handler_name: str) -> None:

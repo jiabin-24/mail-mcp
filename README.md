@@ -142,21 +142,13 @@ server {
   ssl_certificate     /etc/letsencrypt/live/mcp.example.com/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/mcp.example.com/privkey.pem;
 
-  location /mcp {
-    proxy_pass http://127.0.0.1:80/mcp;
+  location ~ ^/mcp(/.*)?$ {
+    proxy_pass http://127.0.0.1:80/mcp$1;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto https;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   }
-}
-```
-
-Caddy 示例：
-
-```caddy
-mcp.example.com {
-  reverse_proxy 127.0.0.1:80
 }
 ```
 
@@ -229,7 +221,7 @@ mcp.example.com {
 
 ### 5.3 建议的权限与 Scope
 
-- Scope 建议至少包含：`offline_access openid profile Mail.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite`
+- Scope 建议至少包含：`offline_access openid profile Mail.Read Mail.ReadWrite Mail.Send Calendars.Read Calendars.ReadWrite`
 - 如果只读场景，可仅保留 `Mail.Read`
 - 这些权限需在 Entra 应用中完成授权（必要时管理员同意）
 
