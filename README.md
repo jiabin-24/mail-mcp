@@ -91,6 +91,7 @@ az acr repository show-tags \
 可选环境变量：
 
 - `GRAPH_BASE_URL`（默认 `https://graph.microsoft.com/v1.0`）
+- `DELEGATED_TOKEN_LOG_MODE`（默认 `masked`，可选 `masked` / `full` / `none`）
 
 当前实现固定使用 `/me` 路由访问 Outlook 邮箱。
 
