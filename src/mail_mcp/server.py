@@ -9,6 +9,7 @@ from starlette.responses import JSONResponse
 
 from .stores.calendar_store import CalendarStore
 from .stores.email_store import EmailStore
+from .stores.graph_store import GraphStoreBase
 from .tools.calendar_tools import register_calendar_tools
 from .tools.email_tools import register_email_tools
 from .utils.biz_logger import configure_default_loggers
@@ -20,8 +21,8 @@ configure_default_loggers()
 CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_access_token", default=None
 )
-EMAIL_STORE = EmailStore(token_provider=lambda: CURRENT_ACCESS_TOKEN.get())
-CALENDAR_STORE = CalendarStore(token_provider=lambda: CURRENT_ACCESS_TOKEN.get())
+TOKEN_PROVIDER = CURRENT_ACCESS_TOKEN.get
+EMAIL_STORE, CALENDAR_STORE, GRAPH_STORE = (EmailStore(token_provider=TOKEN_PROVIDER), CalendarStore(token_provider=TOKEN_PROVIDER), GraphStoreBase(token_provider=TOKEN_PROVIDER))
 APP = FastMCP(
     "mail-assistant",
     host=os.getenv("MCP_HOST", "0.0.0.0"),
@@ -30,6 +31,12 @@ APP = FastMCP(
 )
 register_calendar_tools(APP, CALENDAR_STORE)
 register_email_tools(APP, EMAIL_STORE)
+
+
+@APP.tool()
+def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
+    """List tenant users and their mailbox addresses via Microsoft Graph /users."""
+    return GRAPH_STORE.list_tenant_users(search=search, limit=limit)
 
 @APP.tool()
 def ping() -> dict[str, str]:

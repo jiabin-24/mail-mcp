@@ -57,6 +57,39 @@ class GraphStoreBase:
             return {}
         return response.json()
 
+    def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
+        safe_limit = self._normalize_limit(limit)
+        query = (
+            f"/users?$top={safe_limit}"
+            "&$select=id,displayName,mail,userPrincipalName"
+            "&$filter=mail ne null"
+            "&$orderby=displayName"
+        )
+
+        search_value = (search or "").strip()
+        if search_value:
+            escaped = search_value.replace("'", "''")
+            query = (
+                f"/users?$top={safe_limit}"
+                "&$select=id,displayName,mail,userPrincipalName"
+                f"&$filter=mail ne null and (startswith(displayName,'{escaped}')"
+                f" or startswith(mail,'{escaped}')"
+                f" or startswith(userPrincipalName,'{escaped}'))"
+                "&$orderby=displayName"
+            )
+
+        payload = self._request("GET", query)
+        users = payload.get("value", [])
+        return [
+            {
+                "id": str(user.get("id", "") or ""),
+                "displayName": str(user.get("displayName", "") or ""),
+                "mail": str(user.get("mail", "") or ""),
+                "userPrincipalName": str(user.get("userPrincipalName", "") or ""),
+            }
+            for user in users
+        ]
+
 
 def recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
     result: list[str] = []

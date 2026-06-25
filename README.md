@@ -168,6 +168,8 @@ server {
   - 按 ID 获取邮件详情
 - `mailbox_search(search=None, filter=None, folder="inbox", limit=20)`
   - 透传 Graph `$search` / `$filter` 查询邮件
+- `mailbox_list_tenant_users(search=None, limit=20)`
+  - 查询租户内用户与邮箱（`displayName` / `mail` / `userPrincipalName`）
 - `mailbox_compose(to, subject, body, cc=None, bcc=None)`
   - 生成草稿
 - `calendar_list_events(start=None, end=None, search=None, limit=20)`
