@@ -176,10 +176,10 @@ server {
   - 查询日历事件（可选时间范围；若不传时间范围，默认返回未来 30 天）
 - `calendar_get_event(event_id, calendar_id=None)`
   - 按 ID 读取单个日历事件详情（可选指定日历）
-- `calendar_create_event(subject, start, end, attendees=None, description=None, location=None, is_all_day=False, time_zone="UTC", calendar_id=None)`
-  - 创建日历事件（支持时间、参会人、描述、地点、全天事件、时区，可选指定日历）
-- `calendar_update_event(event_id, subject=None, start=None, end=None, attendees=None, description=None, location=None, is_all_day=None, time_zone="UTC", calendar_id=None)`
-  - 更新日历事件（支持改时间、参会人、描述、地点、全天设置等）
+- `calendar_create_event(subject, start, end, attendees=None, description=None, location=None, is_all_day=False, time_zone=None, calendar_id=None)`
+  - 创建日历事件（支持时间、参会人、描述、地点、全天事件、时区，可选指定日历；未指定 `time_zone` 时默认使用当前用户时区）
+- `calendar_update_event(event_id, subject=None, start=None, end=None, attendees=None, description=None, location=None, is_all_day=None, time_zone=None, calendar_id=None)`
+  - 更新日历事件（支持改时间、参会人、描述、地点、全天设置等；未指定 `time_zone` 时默认使用当前用户时区）
 - `calendar_delete_event(event_id, calendar_id=None)`
   - 删除日历事件
 - `calendar_respond_invitation(event_id, response, comment=None, send_response=True, calendar_id=None)`

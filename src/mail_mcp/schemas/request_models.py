@@ -95,7 +95,7 @@ class CalendarCreateEventInput(BaseModel):
     description: str | None = None
     location: str | None = None
     is_all_day: bool = False
-    time_zone: str = Field(default="UTC", min_length=1)
+    time_zone: str | None = Field(default=None, min_length=1)
     calendar_id: str | None = None
 
 
@@ -110,7 +110,7 @@ class CalendarUpdateEventInput(BaseModel):
     description: str | None = None
     location: str | None = None
     is_all_day: bool | None = None
-    time_zone: str = Field(default="UTC", min_length=1)
+    time_zone: str | None = Field(default=None, min_length=1)
     calendar_id: str | None = None
 
     @model_validator(mode="after")

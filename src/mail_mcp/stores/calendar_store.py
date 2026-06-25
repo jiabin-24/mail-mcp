@@ -32,10 +32,11 @@ class CalendarStore(GraphStoreBase):
         return map_graph_calendar_event(payload)
 
     def create_calendar_event(self, req: CalendarCreateEventInput) -> dict[str, Any]:
+        event_time_zone = self._resolve_event_time_zone(req.time_zone)
         payload: dict[str, Any] = {
             "subject": req.subject,
-            "start": {"dateTime": req.start, "timeZone": req.time_zone},
-            "end": {"dateTime": req.end, "timeZone": req.time_zone},
+            "start": {"dateTime": req.start, "timeZone": event_time_zone},
+            "end": {"dateTime": req.end, "timeZone": event_time_zone},
             "isAllDay": bool(req.is_all_day),
             "attendees": self._emails_to_attendees(req.attendees or []),
         }
@@ -61,13 +62,14 @@ class CalendarStore(GraphStoreBase):
     def update_calendar_event(self, req: CalendarUpdateEventInput) -> dict[str, Any] | None:
         start_value = req.start
         end_value = req.end
+        event_time_zone = self._resolve_event_time_zone(req.time_zone)
 
         patch_payload: dict[str, Any] = {}
         if req.subject is not None:
             patch_payload["subject"] = req.subject
         if start_value and end_value:
-            patch_payload["start"] = {"dateTime": start_value, "timeZone": req.time_zone}
-            patch_payload["end"] = {"dateTime": end_value, "timeZone": req.time_zone}
+            patch_payload["start"] = {"dateTime": start_value, "timeZone": event_time_zone}
+            patch_payload["end"] = {"dateTime": end_value, "timeZone": event_time_zone}
         if req.attendees is not None:
             patch_payload["attendees"] = self._emails_to_attendees(req.attendees)
         if req.description is not None:
@@ -179,3 +181,18 @@ class CalendarStore(GraphStoreBase):
         if calendar_id_value:
             return f"{self._mailbox_prefix}/calendars/{calendar_id_value}/events/{event_id}"
         return f"{self._mailbox_prefix}/events/{event_id}"
+
+    def _resolve_event_time_zone(self, time_zone: str | None) -> str:
+        if time_zone and time_zone.strip():
+            return time_zone.strip()
+
+        try:
+            payload = self._request(
+                "GET",
+                f"{self._mailbox_prefix}/mailboxSettings?$select=timeZone",
+            )
+        except ValueError:
+            return "UTC"
+
+        resolved = str(payload.get("timeZone", "") or "").strip()
+        return resolved or "UTC"

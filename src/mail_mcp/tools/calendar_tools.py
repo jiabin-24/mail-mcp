@@ -53,7 +53,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         description: str | None = None,
         location: str | None = None,
         is_all_day: bool = False,
-        time_zone: str = "UTC",
+        time_zone: str | None = None,
         calendar_id: str | None = None,
     ) -> dict:
         """Create a calendar event in Outlook mailbox."""
@@ -83,7 +83,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         description: str | None = None,
         location: str | None = None,
         is_all_day: bool | None = None,
-        time_zone: str = "UTC",
+        time_zone: str | None = None,
         calendar_id: str | None = None,
     ) -> dict:
         """Update an existing calendar event in Outlook mailbox."""
