@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
-from .calendar_store import CalendarStore
-from .calendar_tools import register_calendar_tools
-from .email_store import EmailStore
-from .email_tools import register_email_tools
+from .stores.calendar_store import CalendarStore
+from .stores.email_store import EmailStore
+from .tools.calendar_tools import register_calendar_tools
+from .tools.email_tools import register_email_tools
 from .utils.biz_logger import configure_default_loggers
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 

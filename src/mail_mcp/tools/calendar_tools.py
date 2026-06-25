@@ -4,8 +4,8 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
-from .calendar_store import CalendarStore
-from .request_models import (
+from ..stores.calendar_store import CalendarStore
+from ..schemas.request_models import (
     CalendarCreateEventInput,
     CalendarDeleteEventInput,
     CalendarGetEventInput,
