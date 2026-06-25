@@ -98,6 +98,7 @@ Token 至少需要这些 Graph 权限之一（按你调用场景）：
 
 - 读取邮件：`Mail.Read`
 - 写草稿/发送：`Mail.ReadWrite`, `Mail.Send`
+- 读取日历：`Calendars.Read`
 
 默认地址：
 - Host: `127.0.0.1`
@@ -175,6 +176,8 @@ mcp.example.com {
   - 透传 Graph `$search` / `$filter` 查询邮件
 - `mailbox_compose(to, subject, body, cc=None, bcc=None)`
   - 生成草稿
+- `calendar_list_events(start=None, end=None, search=None, limit=20)`
+  - 查询日历事件（可选时间范围；若不传时间范围，默认返回未来 30 天）
 - `mailbox_reply_compose(message_id, body)`
   - 基于原邮件生成回复草稿（自动保留历史上下文引用）
 - `mailbox_update_draft(draft_id, to=None, subject=None, body=None, cc=None, bcc=None)`

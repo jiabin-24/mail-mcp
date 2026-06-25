@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 from html import escape
-import os
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote
 
-import httpx
+from .graph_store import GraphStoreBase, recipient_address, recipient_addresses
 
 
-class MailStore:
-    """Outlook mailbox store backed by Microsoft Graph."""
+GRAPH_QUERY_SAFE = "()':,=-"
 
-    def __init__(self, token_provider: Callable[[], str | None]) -> None:
-        self._token_provider = token_provider
-        self._graph_base = os.getenv("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0")
+
+class EmailStore(GraphStoreBase):
+    """Email-focused operations backed by Microsoft Graph mailbox APIs."""
 
     def list_folders(self) -> list[str]:
         payload = self._request(
@@ -68,10 +66,10 @@ class MailStore:
 
         params: list[str] = [f"$top={size}", f"$select={select_clause}"]
         if filter_value:
-            encoded_filter = quote(filter_value, safe="()':,=-")
+            encoded_filter = quote(filter_value, safe=GRAPH_QUERY_SAFE)
             params.append(f"$filter={encoded_filter}")
         if search_value:
-            encoded_search = quote(search_value, safe="()':,=-")
+            encoded_search = quote(search_value, safe=GRAPH_QUERY_SAFE)
             params.append(f"$search={encoded_search}")
         if not search_value:
             params.append("$orderby=receivedDateTime desc")
@@ -104,6 +102,7 @@ class MailStore:
             },
         )
         result = self._map_message(payload, folder="drafts")
+        result["draft_id"] = payload.get("id", "")
         result["webLink"] = payload.get("webLink", "")
         return result
 
@@ -113,7 +112,6 @@ class MailStore:
         if not body.strip():
             raise ValueError("body cannot be empty")
 
-        # createReply 会生成带历史引用的草稿。
         draft = self._request(
             "POST",
             f"{self._mailbox_prefix}/messages/{message_id}/createReply",
@@ -204,9 +202,9 @@ class MailStore:
             "status": "sent",
             "sent_summary": {
                 "subject": draft.get("subject", "") or "",
-                "to": _recipient_addresses(draft.get("toRecipients", [])),
-                "cc": _recipient_addresses(draft.get("ccRecipients", [])),
-                "bcc": _recipient_addresses(draft.get("bccRecipients", [])),
+                "to": recipient_addresses(draft.get("toRecipients", [])),
+                "cc": recipient_addresses(draft.get("ccRecipients", [])),
+                "bcc": recipient_addresses(draft.get("bccRecipients", [])),
                 "bodyPreview": draft.get("bodyPreview", "") or "",
             },
         }
@@ -234,47 +232,6 @@ class MailStore:
             "subject": draft.get("subject", "") or "",
         }
 
-    @property
-    def _mailbox_prefix(self) -> str:
-        return "/me"
-
-    def _request(
-        self,
-        method: str,
-        path: str,
-        json: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
-        expect_json: bool = True,
-    ) -> dict[str, Any]:
-        token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
-        if not token:
-            raise ValueError(
-                "No Outlook token available. Provide bearer token in Authorization header or set OUTLOOK_ACCESS_TOKEN."
-            )
-
-        req_headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json",
-        }
-        if headers:
-            req_headers.update(headers)
-
-        with httpx.Client(base_url=self._graph_base, timeout=30.0) as client:
-            response = client.request(method, path, headers=req_headers, json=json)
-
-        if response.status_code >= 400:
-            try:
-                body = response.json()
-            except ValueError:
-                body = {"error": response.text}
-            raise ValueError(f"Graph API request failed ({response.status_code}): {body}")
-
-        if not expect_json:
-            return {}
-        if not response.content:
-            return {}
-        return response.json()
-
     def _map_message(
         self,
         message: dict[str, Any],
@@ -287,10 +244,10 @@ class MailStore:
         result = {
             "id": message.get("id", ""),
             "folder": folder or message.get("parentFolderId", ""),
-            "from": _recipient_address(message.get("from", {})),
-            "to": _recipient_addresses(message.get("toRecipients", [])),
-            "cc": _recipient_addresses(message.get("ccRecipients", [])),
-            "bcc": _recipient_addresses(message.get("bccRecipients", [])),
+            "from": recipient_address(message.get("from", {})),
+            "to": recipient_addresses(message.get("toRecipients", [])),
+            "cc": recipient_addresses(message.get("ccRecipients", [])),
+            "bcc": recipient_addresses(message.get("bccRecipients", [])),
             "subject": message.get("subject", "") or "",
             "bodyPreview": body_preview,
             "sent": not bool(message.get("isDraft", False)),
@@ -300,9 +257,6 @@ class MailStore:
         if not prefer_preview:
             result["body"] = body_content or body_preview
         return result
-
-    def _normalize_limit(self, limit: int) -> int:
-        return max(1, min(limit, 100))
 
     def _folder_segment(self, folder: str) -> str:
         value = folder.strip().lower()
@@ -316,16 +270,3 @@ class MailStore:
     def _plain_text_to_html(self, text: str) -> str:
         safe = escape(text.strip())
         return safe.replace("\n", "<br/>")
-
-def _recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
-    result: list[str] = []
-    for recipient in recipients:
-        address = _recipient_address(recipient)
-        if address:
-            result.append(address)
-    return result
-
-
-def _recipient_address(recipient: dict[str, Any]) -> str:
-    email_address = recipient.get("emailAddress", {}) if isinstance(recipient, dict) else {}
-    return str(email_address.get("address", "") or "")
