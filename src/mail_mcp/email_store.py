@@ -4,7 +4,8 @@ from html import escape
 from typing import Any
 from urllib.parse import quote
 
-from .graph_store import GraphStoreBase, recipient_address, recipient_addresses
+from .graph_store import GraphStoreBase, recipient_addresses
+from .models import map_graph_message
 
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -34,7 +35,7 @@ class EmailStore(GraphStoreBase):
             f"?$top={size}&$orderby=receivedDateTime desc"
             "&$select=id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime",
         )
-        return [self._map_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
+        return [map_graph_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
 
     def get_message(self, message_id: str) -> dict[str, Any] | None:
         if not message_id.strip():
@@ -44,7 +45,7 @@ class EmailStore(GraphStoreBase):
             f"{self._mailbox_prefix}/messages/{message_id}"
             "?$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime,parentFolderId",
         )
-        return self._map_message(payload)
+        return map_graph_message(payload)
 
     def search_messages(
         self,
@@ -80,7 +81,7 @@ class EmailStore(GraphStoreBase):
             f"{messages_path}?{'&'.join(params)}",
             headers=headers,
         )
-        return [self._map_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
+        return [map_graph_message(item, folder=folder, prefer_preview=True) for item in payload.get("value", [])]
 
     def create_draft(
         self,
@@ -101,7 +102,7 @@ class EmailStore(GraphStoreBase):
                 "bccRecipients": self._emails_to_recipients(bcc or []),
             },
         )
-        result = self._map_message(payload, folder="drafts")
+        result = map_graph_message(payload, folder="drafts")
         result["draft_id"] = payload.get("id", "")
         result["webLink"] = payload.get("webLink", "")
         return result
@@ -130,7 +131,7 @@ class EmailStore(GraphStoreBase):
             f"{self._mailbox_prefix}/messages/{draft_id}",
             json={"body": {"contentType": "HTML", "content": merged_html}},
         )
-        result = self._map_message(updated, folder="drafts")
+        result = map_graph_message(updated, folder="drafts")
         result["webLink"] = updated.get("webLink", "")
         return result
 
@@ -179,7 +180,7 @@ class EmailStore(GraphStoreBase):
             f"{self._mailbox_prefix}/messages/{draft_id}",
             json=patch_payload,
         )
-        result = self._map_message(updated, folder="drafts")
+        result = map_graph_message(updated, folder="drafts")
         result["webLink"] = updated.get("webLink", "")
         return result
 
@@ -231,32 +232,6 @@ class EmailStore(GraphStoreBase):
             "folder": draft.get("parentFolderId", "") or "drafts",
             "subject": draft.get("subject", "") or "",
         }
-
-    def _map_message(
-        self,
-        message: dict[str, Any],
-        folder: str | None = None,
-        prefer_preview: bool = False,
-    ) -> dict[str, Any]:
-        body = message.get("body", {}) or {}
-        body_preview = message.get("bodyPreview", "") or ""
-        body_content = body.get("content", "") or ""
-        result = {
-            "id": message.get("id", ""),
-            "folder": folder or message.get("parentFolderId", ""),
-            "from": recipient_address(message.get("from", {})),
-            "to": recipient_addresses(message.get("toRecipients", [])),
-            "cc": recipient_addresses(message.get("ccRecipients", [])),
-            "bcc": recipient_addresses(message.get("bccRecipients", [])),
-            "subject": message.get("subject", "") or "",
-            "bodyPreview": body_preview,
-            "sent": not bool(message.get("isDraft", False)),
-            "received_at": message.get("receivedDateTime", ""),
-            "sent_at": message.get("sentDateTime", ""),
-        }
-        if not prefer_preview:
-            result["body"] = body_content or body_preview
-        return result
 
     def _folder_segment(self, folder: str) -> str:
         value = folder.strip().lower()

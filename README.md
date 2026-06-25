@@ -100,6 +100,7 @@ Token 至少需要这些 Graph 权限之一（按你调用场景）：
 - 读取邮件：`Mail.Read`
 - 写草稿/发送：`Mail.ReadWrite`, `Mail.Send`
 - 读取日历：`Calendars.Read`
+- 创建/修改日历：`Calendars.ReadWrite`
 
 默认地址：
 - Host: `127.0.0.1`
@@ -171,6 +172,8 @@ server {
   - 生成草稿
 - `calendar_list_events(start=None, end=None, search=None, limit=20)`
   - 查询日历事件（可选时间范围；若不传时间范围，默认返回未来 30 天）
+- `calendar_create_event(subject, start, end, attendees=None, description=None, location=None, is_all_day=False, time_zone="UTC", calendar_id=None)`
+  - 创建日历事件（支持时间、参会人、描述、地点、全天事件、时区，可选指定日历）
 - `mailbox_reply_compose(message_id, body)`
   - 基于原邮件生成回复草稿（自动保留历史上下文引用）
 - `mailbox_update_draft(draft_id, to=None, subject=None, body=None, cc=None, bcc=None)`

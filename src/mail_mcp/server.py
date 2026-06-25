@@ -71,6 +71,40 @@ def calendar_list_events(
     return CALENDAR_STORE.list_calendar_events(start=start, end=end, search=search, limit=limit)
 
 @APP.tool()
+def calendar_create_event(
+    subject: str,
+    start: str,
+    end: str,
+    attendees: list[str] | None = None,
+    description: str | None = None,
+    location: str | None = None,
+    is_all_day: bool = False,
+    time_zone: str = "UTC",
+    calendar_id: str | None = None,
+) -> dict:
+    """Create a calendar event in Outlook mailbox."""
+    if not subject.strip():
+        raise ValueError("subject cannot be empty")
+    if not start.strip():
+        raise ValueError("start cannot be empty")
+    if not end.strip():
+        raise ValueError("end cannot be empty")
+    if not time_zone.strip():
+        raise ValueError("time_zone cannot be empty")
+
+    return CALENDAR_STORE.create_calendar_event(
+        subject=subject,
+        start=start,
+        end=end,
+        attendees=attendees,
+        description=description,
+        location=location,
+        is_all_day=is_all_day,
+        time_zone=time_zone,
+        calendar_id=calendar_id,
+    )
+
+@APP.tool()
 def mailbox_compose(
     to: list[str],
     subject: str,

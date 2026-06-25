@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
 
-from .graph_store import GraphStoreBase, recipient_address, recipient_addresses
+from .graph_store import GraphStoreBase
+from .models import map_graph_calendar_event
 
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -13,6 +14,61 @@ GRAPH_DATETIME_SAFE = "-:.TZ"
 
 class CalendarStore(GraphStoreBase):
     """Calendar-focused operations backed by Microsoft Graph calendar APIs."""
+
+    def create_calendar_event(
+        self,
+        subject: str,
+        start: str,
+        end: str,
+        attendees: list[str] | None = None,
+        description: str | None = None,
+        location: str | None = None,
+        is_all_day: bool = False,
+        time_zone: str = "UTC",
+        calendar_id: str | None = None,
+    ) -> dict[str, Any]:
+        subject_value = subject.strip()
+        start_value = start.strip()
+        end_value = end.strip()
+        time_zone_value = time_zone.strip()
+
+        if not subject_value:
+            raise ValueError("subject cannot be empty")
+        if not start_value:
+            raise ValueError("start cannot be empty")
+        if not end_value:
+            raise ValueError("end cannot be empty")
+        if not time_zone_value:
+            raise ValueError("time_zone cannot be empty")
+
+        payload: dict[str, Any] = {
+            "subject": subject_value,
+            "start": {"dateTime": start_value, "timeZone": time_zone_value},
+            "end": {"dateTime": end_value, "timeZone": time_zone_value},
+            "isAllDay": bool(is_all_day),
+            "attendees": self._emails_to_attendees(attendees or []),
+        }
+
+        description_value = (description or "").strip()
+        if description_value:
+            payload["body"] = {"contentType": "Text", "content": description_value}
+
+        location_value = (location or "").strip()
+        if location_value:
+            payload["location"] = {"displayName": location_value}
+
+        calendar_id_value = (calendar_id or "").strip()
+        if calendar_id_value:
+            path = f"{self._mailbox_prefix}/calendars/{calendar_id_value}/events"
+        else:
+            path = f"{self._mailbox_prefix}/events"
+
+        created = self._request(
+            "POST",
+            path,
+            json=payload,
+        )
+        return map_graph_calendar_event(created)
 
     def list_calendar_events(
         self,
@@ -55,28 +111,18 @@ class CalendarStore(GraphStoreBase):
             )
 
         payload = self._request("GET", path, headers=headers)
-        return [self._map_calendar_event(item) for item in payload.get("value", [])]
+        return [map_graph_calendar_event(item) for item in payload.get("value", [])]
 
-    def _map_calendar_event(self, event: dict[str, Any]) -> dict[str, Any]:
-        organizer = event.get("organizer", {}) or {}
-        location = event.get("location", {}) or {}
-        start = event.get("start", {}) or {}
-        end = event.get("end", {}) or {}
-        return {
-            "id": event.get("id", ""),
-            "subject": event.get("subject", "") or "",
-            "bodyPreview": event.get("bodyPreview", "") or "",
-            "organizer": recipient_address(organizer),
-            "attendees": recipient_addresses(event.get("attendees", [])),
-            "location": str(location.get("displayName", "") or ""),
-            "isAllDay": bool(event.get("isAllDay", False)),
-            "start": {
-                "dateTime": str(start.get("dateTime", "") or ""),
-                "timeZone": str(start.get("timeZone", "") or ""),
-            },
-            "end": {
-                "dateTime": str(end.get("dateTime", "") or ""),
-                "timeZone": str(end.get("timeZone", "") or ""),
-            },
-            "webLink": event.get("webLink", "") or "",
-        }
+    def _emails_to_attendees(self, emails: list[str]) -> list[dict[str, Any]]:
+        attendees: list[dict[str, Any]] = []
+        for email in emails:
+            address = email.strip()
+            if not address:
+                continue
+            attendees.append(
+                {
+                    "emailAddress": {"address": address},
+                    "type": "required",
+                }
+            )
+        return attendees

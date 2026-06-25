@@ -15,11 +15,11 @@ TOKEN_LOG_MODE_NONE = "none"
 TOKEN_PREVIEW_LENGTH = 12
 
 def _resolve_token_log_mode() -> str:
-    mode = os.getenv(TOKEN_LOG_MODE_ENV, TOKEN_LOG_MODE_MASKED).strip().lower()
+    mode = os.getenv(TOKEN_LOG_MODE_ENV, TOKEN_LOG_MODE_NONE).strip().lower()
     if mode in {TOKEN_LOG_MODE_MASKED, TOKEN_LOG_MODE_FULL, TOKEN_LOG_MODE_NONE}:
         return mode
 
-    return TOKEN_LOG_MODE_MASKED
+    return TOKEN_LOG_MODE_NONE
 
 def _extract_token(authorization: str) -> str:
     if authorization.lower().startswith("bearer "):
