@@ -38,6 +38,12 @@ def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> lis
     """List tenant users and their mailbox addresses via Microsoft Graph /users."""
     return GRAPH_STORE.list_tenant_users(search=search, limit=limit)
 
+
+@APP.tool()
+def mailbox_get_user_time_zone() -> dict[str, str]:
+    """Get current user's mailbox time zone."""
+    return GRAPH_STORE.get_user_time_zone()
+
 @APP.tool()
 def ping() -> dict[str, str]:
     """Health check tool."""

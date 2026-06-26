@@ -101,6 +101,20 @@ class GraphStoreBase:
             for user in users
         ]
 
+    def get_user_time_zone(self, fallback: str = "UTC") -> dict[str, str]:
+        try:
+            payload = self._request(
+                "GET",
+                f"{self._mailbox_prefix}/mailboxSettings?$select=timeZone",
+            )
+        except ValueError:
+            return {"time_zone": fallback, "source": "fallback"}
+
+        resolved = str(payload.get("timeZone", "") or "").strip()
+        if resolved:
+            return {"time_zone": resolved, "source": "mailboxSettings"}
+        return {"time_zone": fallback, "source": "fallback"}
+
 
 def recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
     result: list[str] = []

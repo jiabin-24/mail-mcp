@@ -170,6 +170,8 @@ server {
   - 透传 Graph `$search` / `$filter` 查询邮件
 - `mailbox_list_tenant_users(search=None, limit=20)`
   - 查询租户内用户与邮箱（`displayName` / `mail` / `userPrincipalName`）
+- `mailbox_get_user_time_zone()`
+  - 获取当前用户邮箱时区（优先返回 `mailboxSettings.timeZone`，失败时回退 `UTC`）
 - `mailbox_compose(to, subject, body, cc=None, bcc=None)`
   - 生成草稿
 - `calendar_list_events(start=None, end=None, search=None, limit=20)`

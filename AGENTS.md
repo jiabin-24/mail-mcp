@@ -1,10 +1,10 @@
 ---
 name: enterprise-mail-copilot
 description: 企业级邮件 AI 助手，支持 Microsoft 365 邮件查询、总结、生成、审批辅助与直接发送。
-version: 1.2.1
+version: 1.2.2
 language: zh-CN
 owner: mail-assistant
-last_updated: 2026-06-16
+last_updated: 2026-06-26
 ---
 
 # 企业级邮件 AI 助手（精简版）
@@ -60,6 +60,8 @@ last_updated: 2026-06-16
 
 * 默认优先调用 `mailbox_search(search=?, filter=?, folder=?, limit=?)`。
 * 仅当查询复杂且含糊（条件缺失、无法形成有效关键词、或需要先浏览目录）时，才调用 `mailbox_list_messages`。
+* 若创建邮件或会议（event）时仅提供了收件人/参会人的显示名，必须先调用 `mailbox_list_tenant_users` 查询并解析邮箱地址，再调用起草或建会工具。
+* 涉及时间转换或时区展示时，优先调用 `mailbox_get_user_time_zone` 获取当前用户邮箱时区。
 * 若用户明确给出时间范围，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
 * 回复已有邮件时，优先调用 `mailbox_reply_compose(message_id, body)`，以保留历史上下文引用；不要用 `mailbox_compose` 伪造“回复”。
 * 同一发送意图只调用一次起草工具（`mailbox_compose` 或 `mailbox_reply_compose`）；调用后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复起草。
@@ -87,7 +89,10 @@ last_updated: 2026-06-16
 定时发送执行约束：
 
 * 用户确认定时发送后，必须调用 `Create email-draft send job` 持久化草稿 `id` 与计划发送时间。
-* 计划发送时间在调用工具前必须先将用户本地时间转换为 UTC 时间（建议 ISO 8601，`Z` 结尾）再传入任务表字段。
+* 计划发送时间在调用工具前需要先转换为 UTC 时间（建议 ISO 8601，`Z` 结尾）再传入任务表字段；优先先调用 `mailbox_get_user_time_zone` 获取时区，若仍无法确定，则时区相关字段传空，避免额外打扰用户。
+* 会议（event）创建/更新不要强制在对话侧转换为 UTC：
+	若用户明确提供时区，则按该时区传入；
+	若用户未声明时区，优先先调用 `mailbox_get_user_time_zone`；若仍不可用，则不要臆造 `UTC`，优先留空 `time_zone` 由服务端按当前用户邮箱时区自动解析。
 * 定时发送链路不在对话内直接发信，发送动作由后续程序自动执行。
 
 ## 4. 审批与附件

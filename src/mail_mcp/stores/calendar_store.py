@@ -186,13 +186,4 @@ class CalendarStore(GraphStoreBase):
         if time_zone and time_zone.strip():
             return time_zone.strip()
 
-        try:
-            payload = self._request(
-                "GET",
-                f"{self._mailbox_prefix}/mailboxSettings?$select=timeZone",
-            )
-        except ValueError:
-            return "UTC"
-
-        resolved = str(payload.get("timeZone", "") or "").strip()
-        return resolved or "UTC"
+        return self.get_user_time_zone().get("time_zone", "UTC")
