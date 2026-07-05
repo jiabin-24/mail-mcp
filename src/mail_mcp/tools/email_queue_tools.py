@@ -73,13 +73,14 @@ def register_email_queue_tools(
             raise ValueError(f"send job missing draft id: {req.job_id}")
 
         draft_req = validate_input(MailboxDraftIdInput, {"draft_id": draft_id})
-        draft_revoked = email_store.revoke_draft(draft_req)
-        if not draft_revoked:
-            raise ValueError(f"draft not found: {draft_id}")
+        try:
+            email_store.revoke_draft(draft_req)
+        except ValueError:
+            pass
 
-        removed_job = queue_store.delete_job(req.job_id)
+        queue_store.delete_job(req.job_id)
         return {
             "status": "revoked",
-            "job": removed_job,
-            "draft": draft_revoked,
+            "job_id": req.job_id,
+            "message": "scheduled send job revoked successfully",
         }
