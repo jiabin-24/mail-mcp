@@ -109,6 +109,12 @@ Azure Table 所需 RBAC（Service Principal）：
 - 建议作用域：Storage Account 级别（支持表不存在时自动创建）
 - 不建议仅分配 `Contributor`（管理面权限，通常不包含 Table 数据面读写）
 
+触发批量发送（Service Principal）所需 Graph 应用权限：
+
+- `Mail.Send`（Application）
+- 建议同时配置 `Mail.ReadWrite`（Application）用于草稿与发送流程兼容
+- 以上 Application 权限需管理员同意（Admin consent）
+
 当前实现固定使用 `/me` 路由访问 Outlook 邮箱。
 
 鉴权说明：
@@ -177,6 +183,20 @@ server {
 ```
 
 > 对外连接地址示例：`https://mcp.example.com/mcp`
+
+### 2.3 定时任务批量触发发送（HTTP GET）
+
+服务提供一个 HTTP GET 端点用于触发批量发送：
+
+- `GET /jobs/dispatch`
+
+行为说明：
+
+- 查询 Azure Table `EmailSendQueue` 中状态为 `pending` 或 `scheduled` 的任务
+- 仅处理已到计划发送时间的任务（`schedulesendtime <= 当前 UTC`），未到期任务跳过
+- 使用 Service Principal 调用 Graph 发送对应草稿（`/users/{userupn}/messages/{draftId}/send`）
+- 成功任务更新为 `sent` 并写入 `senttime`
+- 失败任务更新为 `failed` 并写入 `lasterror`
 
 ## 3. 已提供的工具（Tools）
 

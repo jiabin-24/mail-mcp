@@ -59,6 +59,20 @@ def _build_asgi_app():
     def healthz(_request):
         return JSONResponse({"status": "ok", "service": "mail-assistant"})
 
+    def dispatch_send_jobs(_request):
+        try:
+            result = EMAIL_SEND_QUEUE_STORE.dispatch_pending_jobs()
+            return JSONResponse(result)
+        except Exception as exc:
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "message": "dispatch pending jobs failed",
+                    "error": str(exc),
+                },
+                status_code=500,
+            )
+
     def index(_request):
         return JSONResponse(
             {
@@ -71,6 +85,7 @@ def _build_asgi_app():
 
     starlette_app.add_route("/", index, methods=["GET"])
     starlette_app.add_route("/healthz", healthz, methods=["GET"])
+    starlette_app.add_route("/jobs/dispatch", dispatch_send_jobs, methods=["GET"])
     starlette_app.add_middleware(
         OAuthTokenLogMiddleware,
         token_context=CURRENT_ACCESS_TOKEN,

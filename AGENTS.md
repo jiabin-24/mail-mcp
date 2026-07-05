@@ -68,6 +68,7 @@ last_updated: 2026-06-30
 * 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并告知发送结果与 summary。若发送成功则告知用户发送成功。
 * 涉及定时发送邮件草稿时，不直接调用 `mailbox_send_draft`；先调用 `mailbox_create_email_draft_send_job`，将草稿 `id` 写入任务表，由后续程序按计划时间自动执行发送。
 * 需要查看当前用户待发送任务时，调用 `mailbox_list_pending_email_draft_send_jobs`，仅返回当前登录用户且状态为待发送的任务。
+* 展示待发送任务时间时，必须按用户时区显示：先调用 `mailbox_get_user_time_zone` 获取时区，将任务中的 UTC 时间转换为该时区本地时间后再展示（可同时保留 UTC 原值）。
 * 需要撤销定时发送任务时，调用 `mailbox_revoke_email_draft_send_job(job_id)`。
 * 创建定时发送任务时，发件人默认且固定为当前登录用户邮箱；不要再二次提问“由谁发送/谁来发这封邮件”。
 * 邮件附件上传必须通过 topic（更新草稿附件）执行，不得在其他工具或对话层伪造“已上传附件”状态。

@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime
 from typing import Any, Callable
+from urllib.parse import quote
 from uuid import uuid4
 
+import httpx
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.data.tables import TableClient, TableServiceClient
 from azure.identity import ClientSecretCredential
@@ -24,6 +26,7 @@ class EmailSendQueueStore(GraphStoreBase):
         tenant_id = (os.getenv("AZURE_TENANT_ID") or "").strip()
         client_id = (os.getenv("AZURE_CLIENT_ID") or "").strip()
         client_secret = (os.getenv("AZURE_CLIENT_SECRET") or "").strip()
+        self._graph_base = os.getenv("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0")
 
         if not self._account_name:
             raise ValueError("Missing AZURE_STORAGE_ACCOUNT_NAME for Azure Table Storage")
@@ -38,6 +41,7 @@ class EmailSendQueueStore(GraphStoreBase):
             client_id=client_id,
             client_secret=client_secret,
         )
+        self._sp_credential = credential
         service_client = TableServiceClient(endpoint=account_url, credential=credential)
         self._table_client: TableClient = service_client.get_table_client(table_name=self._table_name)
         self._ensure_table_exists()
@@ -125,6 +129,111 @@ class EmailSendQueueStore(GraphStoreBase):
             "createdtime": str(entity.get("createdtime", "") or ""),
         }
 
+    def dispatch_pending_jobs(self) -> dict[str, Any]:
+        query_filter = "(status eq 'scheduled' or status eq 'pending')"
+        entities = list(self._table_client.query_entities(query_filter=query_filter))
+
+        now_utc = datetime.now(tz=UTC)
+        sent_count = 0
+        failed_count = 0
+        skipped_not_due_count = 0
+        sent: list[dict[str, str]] = []
+        failed: list[dict[str, str]] = []
+        skipped_not_due: list[dict[str, str]] = []
+        sent_time_utc = _to_utc_iso(datetime.now(tz=UTC))
+
+        for entity in entities:
+            partition_key = str(entity.get("PartitionKey", "") or "")
+            row_key = str(entity.get("RowKey", "") or "")
+            draft_id = str(entity.get("draftemailid", "") or "").strip()
+            user_upn = str(entity.get("userupn", "") or partition_key).strip().lower()
+            schedule_send_time = str(entity.get("schedulesendtime", "") or "").strip()
+
+            due_time = _parse_utc_time(schedule_send_time)
+            if due_time is None:
+                continue
+
+            if due_time > now_utc:
+                skipped_not_due_count += 1
+                skipped_not_due.append({"job_id": row_key, "schedulesendtime": schedule_send_time})
+                continue
+
+            if not draft_id or not user_upn:
+                continue
+
+            try:
+                self._send_draft_as_service_principal(user_upn=user_upn, draft_email_id=draft_id)
+                self._update_job_status(
+                    partition_key=partition_key,
+                    row_key=row_key,
+                    status="sent",
+                    sent_time=sent_time_utc,
+                    last_error="",
+                )
+                sent_count += 1
+                sent.append({"job_id": row_key, "draft_id": draft_id, "userupn": user_upn})
+            except Exception as exc:
+                failed_count += 1
+                error = str(exc)
+                failed.append({"job_id": row_key, "error": error})
+                self._update_job_status(
+                    partition_key=partition_key,
+                    row_key=row_key,
+                    status="failed",
+                    sent_time="",
+                    last_error=error,
+                )
+
+        return {
+            "status": "ok",
+            "processed": len(entities),
+            "sent": sent_count,
+            "failed": failed_count,
+            "skipped_not_due": skipped_not_due_count,
+            "sent_jobs": sent,
+            "failed_jobs": failed,
+            "skipped_not_due_jobs": skipped_not_due,
+        }
+
+    def _send_draft_as_service_principal(self, user_upn: str, draft_email_id: str) -> None:
+        token = self._sp_credential.get_token("https://graph.microsoft.com/.default").token
+        path = (
+            f"/users/{quote(user_upn, safe='')}/messages/"
+            f"{quote(draft_email_id, safe='')}/send"
+        )
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+        with httpx.Client(base_url=self._graph_base, timeout=30.0) as client:
+            response = client.post(path, headers=headers)
+
+        if response.status_code >= 400:
+            try:
+                body = response.json()
+            except ValueError:
+                body = {"error": response.text}
+            raise ValueError(f"Graph send failed ({response.status_code}): {body}")
+
+    def _update_job_status(
+        self,
+        *,
+        partition_key: str,
+        row_key: str,
+        status: str,
+        sent_time: str,
+        last_error: str,
+    ) -> None:
+        entity = {
+            "PartitionKey": partition_key,
+            "RowKey": row_key,
+            "status": status,
+            "senttime": sent_time,
+            "lasterror": last_error,
+            "updatedtime": _to_utc_iso(datetime.now(tz=UTC)),
+        }
+        self._table_client.update_entity(entity=entity, mode="MERGE")
+
 
 def _to_utc_iso(value: datetime, require_tz: bool = False) -> str:
     if value.tzinfo is None:
@@ -134,3 +243,16 @@ def _to_utc_iso(value: datetime, require_tz: bool = False) -> str:
             value = value.replace(tzinfo=UTC)
     utc_value = value.astimezone(UTC)
     return utc_value.isoformat().replace("+00:00", "Z")
+
+
+def _parse_utc_time(value: str) -> datetime | None:
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return None
+    return dt.astimezone(UTC)
