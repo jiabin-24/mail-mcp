@@ -9,9 +9,11 @@ from starlette.responses import JSONResponse
 
 from .stores.calendar_store import CalendarStore
 from .stores.email_store import EmailStore
+from .stores.email_send_queue_store import EmailSendQueueStore
 from .stores.graph_store import GraphStoreBase
 from .tools.calendar_tools import register_calendar_tools
 from .tools.email_tools import register_email_tools
+from .tools.email_queue_tools import register_email_queue_tools
 from .utils.biz_logger import configure_default_loggers
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
@@ -23,6 +25,7 @@ CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVa
 )
 TOKEN_PROVIDER = CURRENT_ACCESS_TOKEN.get
 EMAIL_STORE, CALENDAR_STORE, GRAPH_STORE = (EmailStore(token_provider=TOKEN_PROVIDER), CalendarStore(token_provider=TOKEN_PROVIDER), GraphStoreBase(token_provider=TOKEN_PROVIDER))
+EMAIL_SEND_QUEUE_STORE = EmailSendQueueStore()
 APP = FastMCP(
     "mail-assistant",
     host=os.getenv("MCP_HOST", "0.0.0.0"),
@@ -31,6 +34,7 @@ APP = FastMCP(
 )
 register_calendar_tools(APP, CALENDAR_STORE)
 register_email_tools(APP, EMAIL_STORE)
+register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE)
 
 
 @APP.tool()

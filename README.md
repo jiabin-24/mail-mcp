@@ -92,8 +92,30 @@ az acr repository show-tags \
 
 - `GRAPH_BASE_URL`（默认 `https://graph.microsoft.com/v1.0`）
 - `DELEGATED_TOKEN_LOG_MODE`（默认 `masked`，可选 `masked` / `full` / `none`）
+- `DELEGATED_TOKEN_VALIDATE`（默认 `true`，是否校验传入 Bearer token 有效性）
+- `DELEGATED_TOKEN_CACHE_TTL_SECONDS`（默认 `300`，token 校验结果缓存秒数）
+
+Azure Table（定时发送队列）环境变量：
+
+- `AZURE_STORAGE_ACCOUNT_NAME`（Storage Account 名称）
+- `AZURE_STORAGE_TABLE_NAME`（可选，默认 `EmailSendQueue`）
+- `AZURE_TENANT_ID`（Service Principal 租户 ID）
+- `AZURE_CLIENT_ID`（Service Principal 客户端 ID）
+- `AZURE_CLIENT_SECRET`（Service Principal 密钥）
+
+Azure Table 所需 RBAC（Service Principal）：
+
+- 建议最小权限：`Storage Table Data Contributor`
+- 建议作用域：Storage Account 级别（支持表不存在时自动创建）
+- 不建议仅分配 `Contributor`（管理面权限，通常不包含 Table 数据面读写）
 
 当前实现固定使用 `/me` 路由访问 Outlook 邮箱。
+
+鉴权说明：
+
+- `/mcp` 调用必须携带 `Authorization: Bearer <token>`
+- 服务会通过 Graph `GET /me` 校验 token 是否有效，校验失败返回 `401`
+- `/` 与 `/healthz` 仍允许匿名访问（用于健康检查）
 
 Token 至少需要这些 Graph 权限之一（按你调用场景）：
 
@@ -194,6 +216,8 @@ server {
   - 发送草稿并移到 `sent`
 - `mailbox_revoke_draft(draft_id)`
   - 撤销草稿（删除草稿）
+- `mailbox_create_email_draft_send_job(draft_email_id, schedule_send_time, user_upn, subject=None, status="scheduled", sent_time=None)`
+  - 往 Azure Table `EmailSendQueue` 插入定时发送任务（`draftemailid`、`schedulesendtime`、`status`、`senttime`、`subject`、`userupn`）
 
 ## 4. 基本操作方法（开发流程）
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -59,6 +60,17 @@ class MailboxDraftIdInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     draft_id: str = Field(min_length=1)
+
+
+class MailboxCreateSendJobInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    draft_email_id: str = Field(min_length=1)
+    schedule_send_time: datetime
+    status: Literal["scheduled", "pending", "sent", "failed", "cancelled"] = "scheduled"
+    sent_time: datetime | None = None
+    subject: str | None = None
+    user_upn: str = Field(min_length=1)
 
 
 class CalendarListEventsInput(BaseModel):
