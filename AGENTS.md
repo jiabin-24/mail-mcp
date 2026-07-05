@@ -66,7 +66,7 @@ last_updated: 2026-06-30
 * 回复已有邮件时，优先调用 `mailbox_reply_compose(message_id, body)`，以保留历史上下文引用；不要用 `mailbox_compose` 伪造“回复”。
 * 同一发送意图只调用一次起草工具（`mailbox_compose` 或 `mailbox_reply_compose`）；调用后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复起草。
 * 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并告知发送结果与 summary。若发送成功则告知用户发送成功。
-* 涉及定时发送邮件草稿时，不直接调用 `mailbox_send_draft`；先调用 `Create email-draft send job`，将草稿 `id` 写入任务表，由后续程序按计划时间自动执行发送。
+* 涉及定时发送邮件草稿时，不直接调用 `mailbox_send_draft`；先调用 `mailbox_create_email_draft_send_job`，将草稿 `id` 写入任务表，由后续程序按计划时间自动执行发送。
 * 创建定时发送任务时，发件人默认且固定为当前登录用户邮箱；不要再二次提问“由谁发送/谁来发这封邮件”。
 * 邮件附件上传必须通过 topic（更新草稿附件）执行，不得在其他工具或对话层伪造“已上传附件”状态。
 * topic（更新草稿附件）执行完成后，必须使用返回的 `fileName` + `fileUrl` 回写邮件正文：在起草或更新正文时，将附件信息追加到正文末尾，至少包含附件名称与可访问链接（`fileUrl`）；若存在多个附件，按列表逐条追加。
@@ -91,8 +91,8 @@ last_updated: 2026-06-30
 
 定时发送执行约束：
 
-* 用户确认定时发送后，必须调用 `Create email-draft send job` 持久化草稿 `id` 与计划发送时间。
-* 计划发送时间在调用工具前需要先转换为 UTC 时间（建议 ISO 8601，`Z` 结尾）再传入任务表字段；优先先调用 `mailbox_get_user_time_zone` 获取时区，若仍无法确定，则时区相关字段传空，避免额外打扰用户。
+* 用户确认定时发送后，必须调用 `mailbox_create_email_draft_send_job` 持久化草稿 `id` 与计划发送时间。
+* 计划发送时间调用 `mailbox_create_email_draft_send_job` 时，需要传入带时区偏移的时间（建议 ISO 8601，如 `Z` 或 `+08:00`）；由工具侧统一转换并持久化为 UTC（ISO 8601，`Z` 结尾）。
 * 会议（event）创建/更新不要强制在对话侧转换为 UTC：
 	若用户明确提供时区，则按该时区传入；
 	若用户未声明时区，优先先调用 `mailbox_get_user_time_zone`；若仍不可用，则不要臆造 `UTC`，优先留空 `time_zone` 由服务端按当前用户邮箱时区自动解析。

@@ -48,7 +48,7 @@ class EmailSendQueueStore:
             "PartitionKey": user_upn,
             "RowKey": row_key,
             "draftemailid": req.draft_email_id,
-            "schedulesendtime": _to_utc_iso(req.schedule_send_time),
+            "schedulesendtime": _to_utc_iso(req.schedule_send_time, require_tz=True),
             "status": req.status,
             "senttime": _to_utc_iso(req.sent_time) if req.sent_time else "",
             "subject": req.subject or "",
@@ -81,8 +81,11 @@ class EmailSendQueueStore:
             return
 
 
-def _to_utc_iso(value: datetime) -> str:
+def _to_utc_iso(value: datetime, require_tz: bool = False) -> str:
     if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
+        if require_tz:
+            raise ValueError("schedule_send_time must include timezone offset (e.g. Z or +08:00)")
+        else:
+            value = value.replace(tzinfo=UTC)
     utc_value = value.astimezone(UTC)
     return utc_value.isoformat().replace("+00:00", "Z")
