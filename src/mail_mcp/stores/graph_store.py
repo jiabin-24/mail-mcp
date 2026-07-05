@@ -115,6 +115,18 @@ class GraphStoreBase:
             return {"time_zone": resolved, "source": "mailboxSettings"}
         return {"time_zone": fallback, "source": "fallback"}
 
+    def resolve_current_user_upn(self) -> str:
+        payload = self._request(
+            "GET",
+            f"{self._mailbox_prefix}?$select=mail,userPrincipalName",
+        )
+        mail = str(payload.get("mail", "") or "").strip().lower()
+        upn = str(payload.get("userPrincipalName", "") or "").strip().lower()
+        resolved = mail or upn
+        if not resolved:
+            raise ValueError("Cannot resolve current user mailbox from token")
+        return resolved
+
 
 def recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
     result: list[str] = []

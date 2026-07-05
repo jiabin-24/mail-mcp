@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from azure.core.exceptions import ResourceExistsError
@@ -10,12 +10,14 @@ from azure.data.tables import TableClient, TableServiceClient
 from azure.identity import ClientSecretCredential
 
 from ..schemas.request_models import MailboxCreateSendJobInput
+from .graph_store import GraphStoreBase
 
 
-class EmailSendQueueStore:
+class EmailSendQueueStore(GraphStoreBase):
     """Persist scheduled email send jobs into Azure Table Storage."""
 
-    def __init__(self) -> None:
+    def __init__(self, token_provider: Callable[[], str | None]) -> None:
+        super().__init__(token_provider=token_provider)
         self._account_name = (os.getenv("AZURE_STORAGE_ACCOUNT_NAME") or "").strip()
         self._table_name = (os.getenv("AZURE_STORAGE_TABLE_NAME") or "EmailSendQueue").strip()
 
@@ -41,7 +43,7 @@ class EmailSendQueueStore:
         self._ensure_table_exists()
 
     def enqueue_send_job(self, req: MailboxCreateSendJobInput) -> dict[str, Any]:
-        user_upn = req.user_upn.strip().lower()
+        user_upn = self.resolve_current_user_upn()
         row_key = uuid4().hex
 
         entity: dict[str, Any] = {

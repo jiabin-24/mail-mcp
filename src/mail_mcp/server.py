@@ -25,7 +25,7 @@ CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVa
 )
 TOKEN_PROVIDER = CURRENT_ACCESS_TOKEN.get
 EMAIL_STORE, CALENDAR_STORE, GRAPH_STORE = (EmailStore(token_provider=TOKEN_PROVIDER), CalendarStore(token_provider=TOKEN_PROVIDER), GraphStoreBase(token_provider=TOKEN_PROVIDER))
-EMAIL_SEND_QUEUE_STORE = EmailSendQueueStore()
+EMAIL_SEND_QUEUE_STORE = EmailSendQueueStore(token_provider=TOKEN_PROVIDER)
 APP = FastMCP(
     "mail-assistant",
     host=os.getenv("MCP_HOST", "0.0.0.0"),

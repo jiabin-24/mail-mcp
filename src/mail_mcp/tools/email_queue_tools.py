@@ -9,7 +9,6 @@ def register_email_queue_tools(app, queue_store: EmailSendQueueStore | None) -> 
     def mailbox_create_email_draft_send_job(
         draft_email_id: str,
         schedule_send_time: str,
-        user_upn: str,
         subject: str | None = None,
         status: str = "scheduled",
         sent_time: str | None = None,
@@ -26,7 +25,6 @@ def register_email_queue_tools(app, queue_store: EmailSendQueueStore | None) -> 
             {
                 "draft_email_id": draft_email_id,
                 "schedule_send_time": schedule_send_time,
-                "user_upn": user_upn,
                 "subject": subject,
                 "status": status,
                 "sent_time": sent_time,

@@ -216,7 +216,7 @@ server {
   - 发送草稿并移到 `sent`
 - `mailbox_revoke_draft(draft_id)`
   - 撤销草稿（删除草稿）
-- `mailbox_create_email_draft_send_job(draft_email_id, schedule_send_time, user_upn, subject=None, status="scheduled", sent_time=None)`
+- `mailbox_create_email_draft_send_job(draft_email_id, schedule_send_time, subject=None, status="scheduled", sent_time=None)`
   - 往 Azure Table `EmailSendQueue` 插入定时发送任务（`draftemailid`、`schedulesendtime`、`status`、`senttime`、`subject`、`userupn`）
   - `schedule_send_time` 需传带时区偏移的 ISO 8601 时间（例如 `2026-07-05T06:00:00Z` 或 `2026-07-05T14:00:00+08:00`），服务端会统一转换为 UTC 后入库
 

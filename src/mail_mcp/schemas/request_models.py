@@ -70,7 +70,6 @@ class MailboxCreateSendJobInput(BaseModel):
     status: Literal["scheduled", "pending", "sent", "failed", "cancelled"] = "scheduled"
     sent_time: datetime | None = None
     subject: str | None = None
-    user_upn: str = Field(min_length=1)
 
 
 class CalendarListEventsInput(BaseModel):

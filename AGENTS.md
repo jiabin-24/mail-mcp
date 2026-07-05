@@ -92,7 +92,7 @@ last_updated: 2026-06-30
 定时发送执行约束：
 
 * 用户确认定时发送后，必须调用 `mailbox_create_email_draft_send_job` 持久化草稿 `id` 与计划发送时间。
-* 计划发送时间调用 `mailbox_create_email_draft_send_job` 时，需要传入带时区偏移的时间（建议 ISO 8601，如 `Z` 或 `+08:00`）；由工具侧统一转换并持久化为 UTC（ISO 8601，`Z` 结尾）。
+* 创建定时任务前，必须先调用 `mailbox_get_user_time_zone` 获取用户时区；再根据该时区将计划发送时间转换为 UTC（ISO 8601，`Z` 结尾）后，作为 `mailbox_create_email_draft_send_job` 的 `schedule_send_time` 入参。
 * 会议（event）创建/更新不要强制在对话侧转换为 UTC：
 	若用户明确提供时区，则按该时区传入；
 	若用户未声明时区，优先先调用 `mailbox_get_user_time_zone`；若仍不可用，则不要臆造 `UTC`，优先留空 `time_zone` 由服务端按当前用户邮箱时区自动解析。
