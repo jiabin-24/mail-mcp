@@ -34,7 +34,7 @@ APP = FastMCP(
 )
 register_calendar_tools(APP, CALENDAR_STORE)
 register_email_tools(APP, EMAIL_STORE)
-register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE)
+register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
 
 
 @APP.tool()

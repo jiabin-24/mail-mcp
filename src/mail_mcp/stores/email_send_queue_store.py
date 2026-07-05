@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, Callable
 from uuid import uuid4
 
-from azure.core.exceptions import ResourceExistsError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.data.tables import TableClient, TableServiceClient
 from azure.identity import ClientSecretCredential
 
@@ -81,6 +81,49 @@ class EmailSendQueueStore(GraphStoreBase):
             self._table_client.create_table()
         except ResourceExistsError:
             return
+
+    def list_pending_jobs(self, limit: int = 20) -> list[dict[str, Any]]:
+        user_upn = self.resolve_current_user_upn()
+        safe_limit = max(1, min(limit, 100))
+        escaped_upn = user_upn.replace("'", "''")
+        query_filter = (
+            f"PartitionKey eq '{escaped_upn}' and "
+            "(status eq 'scheduled' or status eq 'pending')"
+        )
+
+        results: list[dict[str, Any]] = []
+        entities = self._table_client.query_entities(query_filter=query_filter)
+        for entity in entities:
+            results.append(self._map_entity(entity))
+            if len(results) >= safe_limit:
+                break
+        return results
+
+    def get_job(self, job_id: str) -> dict[str, Any]:
+        user_upn = self.resolve_current_user_upn()
+        try:
+            entity = self._table_client.get_entity(partition_key=user_upn, row_key=job_id)
+        except ResourceNotFoundError as exc:
+            raise ValueError(f"send job not found: {job_id}") from exc
+        return self._map_entity(entity)
+
+    def delete_job(self, job_id: str) -> dict[str, Any]:
+        user_upn = self.resolve_current_user_upn()
+        job = self.get_job(job_id)
+        self._table_client.delete_entity(partition_key=user_upn, row_key=job_id)
+        return job
+
+    def _map_entity(self, entity: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "job_id": str(entity.get("RowKey", "") or ""),
+            "userupn": str(entity.get("userupn", "") or ""),
+            "draftemailid": str(entity.get("draftemailid", "") or ""),
+            "schedulesendtime": str(entity.get("schedulesendtime", "") or ""),
+            "status": str(entity.get("status", "") or ""),
+            "senttime": str(entity.get("senttime", "") or ""),
+            "subject": str(entity.get("subject", "") or ""),
+            "createdtime": str(entity.get("createdtime", "") or ""),
+        }
 
 
 def _to_utc_iso(value: datetime, require_tz: bool = False) -> str:

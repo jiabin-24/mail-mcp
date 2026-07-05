@@ -67,6 +67,8 @@ last_updated: 2026-06-30
 * 同一发送意图只调用一次起草工具（`mailbox_compose` 或 `mailbox_reply_compose`）；调用后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复起草。
 * 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并告知发送结果与 summary。若发送成功则告知用户发送成功。
 * 涉及定时发送邮件草稿时，不直接调用 `mailbox_send_draft`；先调用 `mailbox_create_email_draft_send_job`，将草稿 `id` 写入任务表，由后续程序按计划时间自动执行发送。
+* 需要查看当前用户待发送任务时，调用 `mailbox_list_pending_email_draft_send_jobs`，仅返回当前登录用户且状态为待发送的任务。
+* 需要撤销定时发送任务时，调用 `mailbox_revoke_email_draft_send_job(job_id)`。
 * 创建定时发送任务时，发件人默认且固定为当前登录用户邮箱；不要再二次提问“由谁发送/谁来发这封邮件”。
 * 邮件附件上传必须通过 topic（更新草稿附件）执行，不得在其他工具或对话层伪造“已上传附件”状态。
 * topic（更新草稿附件）执行完成后，必须使用返回的 `fileName` + `fileUrl` 回写邮件正文：在起草或更新正文时，将附件信息追加到正文末尾，至少包含附件名称与可访问链接（`fileUrl`）；若存在多个附件，按列表逐条追加。

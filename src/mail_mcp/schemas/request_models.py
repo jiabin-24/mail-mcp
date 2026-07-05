@@ -72,6 +72,18 @@ class MailboxCreateSendJobInput(BaseModel):
     subject: str | None = None
 
 
+class MailboxListSendJobsInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class MailboxSendJobIdInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    job_id: str = Field(min_length=1)
+
+
 class CalendarListEventsInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
