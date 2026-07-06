@@ -102,6 +102,10 @@ class CalendarStore(GraphStoreBase):
         if req.is_all_day is not None:
             patch_payload["isAllDay"] = bool(req.is_all_day)
 
+        if patch_payload:
+            patch_payload["isOnlineMeeting"] = True
+            patch_payload["onlineMeetingProvider"] = "teamsForBusiness"
+
         if not patch_payload:
             return {
                 "id": req.event_id,
