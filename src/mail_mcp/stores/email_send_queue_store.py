@@ -11,7 +11,7 @@ from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from azure.data.tables import TableClient, TableServiceClient
 from azure.identity import ClientSecretCredential
 
-from ..schemas.request_models import MailboxCreateSendJobInput
+from ..schemas.request_models import MailboxCreateSendJobInput, MailboxUpdateSendJobScheduleInput
 from .graph_store import GraphStoreBase
 
 
@@ -116,6 +116,29 @@ class EmailSendQueueStore(GraphStoreBase):
         job = self.get_job(job_id)
         self._table_client.delete_entity(partition_key=user_upn, row_key=job_id)
         return job
+
+    def update_job_schedule(self, req: MailboxUpdateSendJobScheduleInput) -> dict[str, Any]:
+        user_upn = self.resolve_current_user_upn()
+        job = self.get_job(req.job_id)
+
+        status = str(job.get("status", "") or "").strip().lower()
+        if status not in {"scheduled", "pending"}:
+            raise ValueError(f"send job is not pending: {req.job_id}")
+
+        self._table_client.update_entity(
+            entity={
+                "PartitionKey": user_upn,
+                "RowKey": req.job_id,
+                "schedulesendtime": _to_utc_iso(req.schedule_send_time, require_tz=True),
+                "status": "scheduled",
+                "senttime": "",
+                "lasterror": "",
+                "updatedtime": _to_utc_iso(datetime.now(tz=UTC)),
+            },
+            mode="MERGE",
+        )
+
+        return self.get_job(req.job_id)
 
     def _map_entity(self, entity: dict[str, Any]) -> dict[str, Any]:
         return {

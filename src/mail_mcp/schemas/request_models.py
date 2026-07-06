@@ -84,6 +84,13 @@ class MailboxSendJobIdInput(BaseModel):
     job_id: str = Field(min_length=1)
 
 
+class MailboxUpdateSendJobScheduleInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    job_id: str = Field(min_length=1)
+    schedule_send_time: datetime
+
+
 class CalendarListEventsInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 

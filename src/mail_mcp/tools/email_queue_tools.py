@@ -5,6 +5,7 @@ from ..schemas.request_models import (
     MailboxDraftIdInput,
     MailboxListSendJobsInput,
     MailboxSendJobIdInput,
+    MailboxUpdateSendJobScheduleInput,
     validate_input,
 )
 from ..stores.email_store import EmailStore
@@ -15,6 +16,12 @@ QUEUE_STORE_CONFIG_ERROR = (
     "Azure Table queue store is not configured. Set AZURE_STORAGE_ACCOUNT_NAME, "
     "AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET."
 )
+
+
+def _require_queue_store(queue_store: EmailSendQueueStore | None) -> EmailSendQueueStore:
+    if queue_store is None:
+        raise ValueError(QUEUE_STORE_CONFIG_ERROR)
+    return queue_store
 
 
 def register_email_queue_tools(
@@ -31,8 +38,7 @@ def register_email_queue_tools(
         sent_time: str | None = None,
     ) -> dict:
         """Create a scheduled send job in Azure Table Storage (EmailSendQueue)."""
-        if queue_store is None:
-            raise ValueError(QUEUE_STORE_CONFIG_ERROR)
+        store = _require_queue_store(queue_store)
 
         req = validate_input(
             MailboxCreateSendJobInput,
@@ -44,25 +50,23 @@ def register_email_queue_tools(
                 "sent_time": sent_time,
             },
         )
-        return queue_store.enqueue_send_job(req)
+        return store.enqueue_send_job(req)
 
     @app.tool()
     def mailbox_list_pending_email_draft_send_jobs(limit: int = 20) -> list[dict]:
         """List pending scheduled-send jobs for the current signed-in user."""
-        if queue_store is None:
-            raise ValueError(QUEUE_STORE_CONFIG_ERROR)
+        store = _require_queue_store(queue_store)
 
         req = validate_input(MailboxListSendJobsInput, {"limit": limit})
-        return queue_store.list_pending_jobs(limit=req.limit)
+        return store.list_pending_jobs(limit=req.limit)
 
     @app.tool()
     def mailbox_revoke_email_draft_send_job(job_id: str) -> dict:
         """Revoke a scheduled-send job and also delete its related draft email."""
-        if queue_store is None:
-            raise ValueError(QUEUE_STORE_CONFIG_ERROR)
+        store = _require_queue_store(queue_store)
 
         req = validate_input(MailboxSendJobIdInput, {"job_id": job_id})
-        job = queue_store.get_job(req.job_id)
+        job = store.get_job(req.job_id)
 
         status = str(job.get("status", "") or "").strip().lower()
         if status not in {"scheduled", "pending"}:
@@ -78,9 +82,30 @@ def register_email_queue_tools(
         except ValueError:
             pass
 
-        queue_store.delete_job(req.job_id)
+        store.delete_job(req.job_id)
         return {
             "status": "revoked",
             "job_id": req.job_id,
             "message": "scheduled send job revoked successfully",
+        }
+
+    @app.tool()
+    def mailbox_update_email_draft_send_job_schedule(
+        job_id: str,
+        schedule_send_time: str,
+    ) -> dict:
+        """Update schedule_send_time for one pending/scheduled send job."""
+        store = _require_queue_store(queue_store)
+
+        req = validate_input(
+            MailboxUpdateSendJobScheduleInput,
+            {
+                "job_id": job_id,
+                "schedule_send_time": schedule_send_time,
+            },
+        )
+        updated = store.update_job_schedule(req)
+        return {
+            "status": "updated",
+            "job": updated,
         }
