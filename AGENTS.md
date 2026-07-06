@@ -69,7 +69,8 @@ last_updated: 2026-06-30
 * 涉及定时发送邮件草稿时，不直接调用 `mailbox_send_draft`；先调用 `mailbox_create_email_draft_send_job`，将草稿 `id` 写入任务表，由后续程序按计划时间自动执行发送。
 * 需要查看当前用户待发送任务时，调用 `mailbox_list_pending_email_draft_send_jobs`，仅返回当前登录用户且状态为待发送的任务。
 * 展示待发送任务时间时，必须按用户时区显示：先调用 `mailbox_get_user_time_zone` 获取时区，将任务中的 UTC 时间转换为该时区本地时间后再展示（可同时保留 UTC 原值）。
-* 需要撤销定时发送任务时，调用 `mailbox_revoke_email_draft_send_job(job_id)`。
+* 需要撤销定时发送任务时，调用 `mailbox_revoke_email_draft_send_job(job_id)`，该工具仅删除 Azure Table 中的待发送任务，不撤销邮件草稿。
+* 若还需撤销邮件草稿，必须单独调用 `#sym:mailbox_revoke_draft(draft_id)`。
 * 创建定时发送任务时，发件人默认且固定为当前登录用户邮箱；不要再二次提问“由谁发送/谁来发这封邮件”。
 * 邮件附件上传必须通过 topic（更新草稿附件）执行，不得在其他工具或对话层伪造“已上传附件”状态。
 * topic（更新草稿附件）执行完成后，必须使用返回的 `fileName` + `fileUrl` 回写邮件正文：在起草或更新正文时，将附件信息追加到正文末尾，至少包含附件名称与可访问链接（`fileUrl`）；若存在多个附件，按列表逐条追加。

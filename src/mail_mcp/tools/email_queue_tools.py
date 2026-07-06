@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from ..schemas.request_models import (
     MailboxCreateSendJobInput,
-    MailboxDraftIdInput,
     MailboxListSendJobsInput,
     MailboxSendJobIdInput,
     MailboxUpdateSendJobScheduleInput,
@@ -27,7 +26,7 @@ def _require_queue_store(queue_store: EmailSendQueueStore | None) -> EmailSendQu
 def register_email_queue_tools(
     app,
     queue_store: EmailSendQueueStore | None,
-    email_store: EmailStore,
+    _email_store: EmailStore,
 ) -> None:
     @app.tool()
     def mailbox_create_email_draft_send_job(
@@ -62,7 +61,7 @@ def register_email_queue_tools(
 
     @app.tool()
     def mailbox_revoke_email_draft_send_job(job_id: str) -> dict:
-        """Revoke a scheduled-send job and also delete its related draft email."""
+        """Revoke a scheduled-send job by deleting it from Azure Table Storage."""
         store = _require_queue_store(queue_store)
 
         req = validate_input(MailboxSendJobIdInput, {"job_id": job_id})
@@ -72,21 +71,11 @@ def register_email_queue_tools(
         if status not in {"scheduled", "pending"}:
             raise ValueError(f"send job is not pending: {req.job_id}")
 
-        draft_id = str(job.get("draftemailid", "") or "").strip()
-        if not draft_id:
-            raise ValueError(f"send job missing draft id: {req.job_id}")
-
-        draft_req = validate_input(MailboxDraftIdInput, {"draft_id": draft_id})
-        try:
-            email_store.revoke_draft(draft_req)
-        except ValueError:
-            pass
-
         store.delete_job(req.job_id)
         return {
             "status": "revoked",
             "job_id": req.job_id,
-            "message": "scheduled send job revoked successfully",
+            "message": "scheduled send job revoked from queue successfully",
         }
 
     @app.tool()
