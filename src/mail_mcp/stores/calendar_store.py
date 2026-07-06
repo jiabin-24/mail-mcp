@@ -48,7 +48,7 @@ class CalendarStore(GraphStoreBase):
             description_html = self._plain_text_to_html(req.description)
             payload["body"] = {
                 "contentType": "HTML",
-                "content": f"<div>{description_html}</div><br/><br/>",
+                "content": f"<div>{description_html}</div><br/>",
             }
 
         if req.location:
