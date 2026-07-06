@@ -45,7 +45,11 @@ class CalendarStore(GraphStoreBase):
         }
 
         if req.description:
-            payload["body"] = {"contentType": "Text", "content": req.description}
+            description_html = self._plain_text_to_html(req.description)
+            payload["body"] = {
+                "contentType": "HTML",
+                "content": f"<div>{description_html}</div><br/><br/>",
+            }
 
         if req.location:
             payload["location"] = {"displayName": req.location}
@@ -214,7 +218,8 @@ class CalendarStore(GraphStoreBase):
         meeting_block = self._extract_meeting_info_block(existing_body_html)
         if meeting_block:
             # Keep only meeting info block to avoid re-merging old business content repeatedly.
-            return f"<div>{description_html}</div><br/>{meeting_block}"
+            # Use a blank line separator between user description and Teams join information.
+            return f"<div>{description_html}</div><br/><br/>{meeting_block}"
         return f"<div>{description_html}</div>"
 
     def _plain_text_to_html(self, text: str) -> str:
