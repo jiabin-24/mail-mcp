@@ -101,9 +101,9 @@ class GraphStoreBase:
                     escaped = token.replace("'", "''")
                     token_clauses.append(
                         "("
-                        f"contains(displayName,'{escaped}') "
-                        f"or contains(mail,'{escaped}') "
-                        f"or contains(userPrincipalName,'{escaped}')"
+                        f"startswith(displayName,'{escaped}') "
+                        f"or startswith(mail,'{escaped}') "
+                        f"or startswith(userPrincipalName,'{escaped}')"
                         ")"
                     )
                 filter_expr = "mail ne null and (" + " or ".join(token_clauses) + ")"
