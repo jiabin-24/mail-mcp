@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 import httpx
 from cachetools import TTLCache
+from mail_mcp.tools.search_token_tools import expand_search_tokens
 
 GRAPH_QUERY_SAFE = "()':,=-"
 
@@ -94,8 +95,9 @@ class GraphStoreBase:
         if search_value:
             tokens = [token for token in search_value.split() if token]
             if tokens:
+                expanded_tokens = expand_search_tokens(tokens)
                 token_clauses: list[str] = []
-                for token in tokens:
+                for token in expanded_tokens:
                     escaped = token.replace("'", "''")
                     token_clauses.append(
                         "("
