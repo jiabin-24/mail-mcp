@@ -67,7 +67,7 @@ class MailboxCreateSendJobInput(BaseModel):
 
     draft_email_id: str = Field(min_length=1)
     schedule_send_time: datetime
-    status: Literal["scheduled", "pending", "sent", "failed", "cancelled"] = "scheduled"
+    status: Literal["scheduled", "sent", "failed"] = "scheduled"
     sent_time: datetime | None = None
     subject: str | None = None
 

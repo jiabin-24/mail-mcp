@@ -92,7 +92,7 @@ class EmailSendQueueStore(GraphStoreBase):
         escaped_upn = user_upn.replace("'", "''")
         query_filter = (
             f"PartitionKey eq '{escaped_upn}' and "
-            "(status eq 'scheduled' or status eq 'pending' or status eq 'failed')"
+            "(status eq 'scheduled' or status eq 'failed')"
         )
 
         results: list[dict[str, Any]] = []
@@ -122,8 +122,8 @@ class EmailSendQueueStore(GraphStoreBase):
         job = self.get_job(req.job_id)
 
         status = str(job.get("status", "") or "").strip().lower()
-        if status not in {"scheduled", "pending"}:
-            raise ValueError(f"send job is not pending: {req.job_id}")
+        if status != "scheduled":
+            raise ValueError(f"send job is not scheduled: {req.job_id}")
 
         self._table_client.update_entity(
             entity={
@@ -153,7 +153,7 @@ class EmailSendQueueStore(GraphStoreBase):
         }
 
     def dispatch_pending_jobs(self) -> dict[str, Any]:
-        query_filter = "(status eq 'scheduled' or status eq 'pending' or status eq 'failed')"
+        query_filter = "(status eq 'scheduled' or status eq 'failed')"
         entities = list(self._table_client.query_entities(query_filter=query_filter))
 
         now_utc = datetime.now(tz=UTC)

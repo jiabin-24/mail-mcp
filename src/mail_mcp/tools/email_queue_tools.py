@@ -53,7 +53,7 @@ def register_email_queue_tools(
 
     @app.tool()
     def mailbox_list_pending_email_draft_send_jobs(limit: int = 20) -> list[dict]:
-        """List pending scheduled-send jobs for the current signed-in user."""
+        """List scheduled/failed send jobs for the current signed-in user."""
         store = _require_queue_store(queue_store)
 
         req = validate_input(MailboxListSendJobsInput, {"limit": limit})
@@ -68,8 +68,8 @@ def register_email_queue_tools(
         job = store.get_job(req.job_id)
 
         status = str(job.get("status", "") or "").strip().lower()
-        if status not in {"scheduled", "pending"}:
-            raise ValueError(f"send job is not pending: {req.job_id}")
+        if status != "scheduled":
+            raise ValueError(f"send job is not scheduled: {req.job_id}")
 
         store.delete_job(req.job_id)
         return {
@@ -83,7 +83,7 @@ def register_email_queue_tools(
         job_id: str,
         schedule_send_time: str,
     ) -> dict:
-        """Update schedule_send_time for one pending/scheduled send job."""
+        """Update schedule_send_time for one scheduled send job."""
         store = _require_queue_store(queue_store)
 
         req = validate_input(
