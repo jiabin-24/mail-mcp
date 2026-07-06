@@ -75,33 +75,42 @@ class GraphStoreBase:
     def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
         safe_limit = self._normalize_limit(limit)
         headers = {"ConsistencyLevel": "eventual"}
-        query = (
+        base_query_prefix = (
             f"/users?$top={safe_limit}"
             "&$count=true"
             "&$select=id,displayName,mail,userPrincipalName"
-            f"&$filter={quote('mail ne null', safe=GRAPH_QUERY_SAFE)}"
-            "&$orderby=displayName"
         )
 
-        search_value = (search or "").strip()
-        if search_value:
-            escaped = search_value.replace("'", "''")
-            filter_expr = (
-                "mail ne null and "
-                f"(startswith(displayName,'{escaped}') "
-                f"or startswith(mail,'{escaped}') "
-                f"or startswith(userPrincipalName,'{escaped}'))"
-            )
+        def fetch_users(filter_expr: str) -> list[dict[str, Any]]:
             query = (
-                f"/users?$top={safe_limit}"
-                "&$count=true"
-                "&$select=id,displayName,mail,userPrincipalName"
+                f"{base_query_prefix}"
                 f"&$filter={quote(filter_expr, safe=GRAPH_QUERY_SAFE)}"
                 "&$orderby=displayName"
             )
+            payload = self._request("GET", query, headers=headers)
+            return payload.get("value", [])
 
-        payload = self._request("GET", query, headers=headers)
-        users = payload.get("value", [])
+        search_value = (search or "").strip()
+        if search_value:
+            tokens = [token for token in search_value.split() if token]
+            if tokens:
+                token_clauses: list[str] = []
+                for token in tokens:
+                    escaped = token.replace("'", "''")
+                    token_clauses.append(
+                        "("
+                        f"contains(displayName,'{escaped}') "
+                        f"or contains(mail,'{escaped}') "
+                        f"or contains(userPrincipalName,'{escaped}')"
+                        ")"
+                    )
+                filter_expr = "mail ne null and (" + " or ".join(token_clauses) + ")"
+                users = fetch_users(filter_expr)
+            else:
+                users = fetch_users("mail ne null")
+        else:
+            users = fetch_users("mail ne null")
+
         return [
             {
                 "id": str(user.get("id", "") or ""),
