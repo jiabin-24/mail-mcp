@@ -119,6 +119,7 @@ class EmailStore(GraphStoreBase):
             json={"body": {"contentType": "HTML", "content": merged_html}},
         )
         result = map_graph_message(updated, folder="drafts")
+        result["draft_id"] = updated.get("id", "")
         result["webLink"] = updated.get("webLink", "")
         return result
 

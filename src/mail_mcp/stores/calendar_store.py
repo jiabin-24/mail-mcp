@@ -57,7 +57,9 @@ class CalendarStore(GraphStoreBase):
             path,
             json=payload,
         )
-        return map_graph_calendar_event(created)
+        result = map_graph_calendar_event(created)
+        result["draft_id"] = created.get("id", "")
+        return result
 
     def update_calendar_event(self, req: CalendarUpdateEventInput) -> dict[str, Any] | None:
         start_value = req.start
