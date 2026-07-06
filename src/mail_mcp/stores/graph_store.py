@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from typing import Any, Callable
 from urllib.parse import quote
 
 import httpx
-
+from cachetools import TTLCache
 
 GRAPH_QUERY_SAFE = "()':,=-"
-
 
 class GraphStoreBase:
     """Shared Microsoft Graph client behavior for mailbox-backed stores."""
@@ -16,6 +16,10 @@ class GraphStoreBase:
     def __init__(self, token_provider: Callable[[], str | None]) -> None:
         self._token_provider = token_provider
         self._graph_base = os.getenv("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0")
+        # 统一缓存 TTL（秒），<=0 表示禁用写入缓存。
+        self._cache_ttl = max(0, int(os.getenv("GRAPH_CACHE_TTL_SECONDS") or 300))
+        # 进程内小缓存：减少重复查询当前用户时区与邮箱标识。
+        self._cache: TTLCache[str, Any] = TTLCache(maxsize=128, ttl=max(1, self._cache_ttl))
 
     @property
     def _mailbox_prefix(self) -> str:
@@ -23,6 +27,13 @@ class GraphStoreBase:
 
     def _normalize_limit(self, limit: int) -> int:
         return max(1, min(limit, 100))
+
+    def _cache_scope_key(self) -> str:
+        token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
+        if not token:
+            return "anonymous"
+        # 仅使用 token 指纹作为作用域，避免不同调用者串缓存值。
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
 
     def _request(
         self,
@@ -102,6 +113,11 @@ class GraphStoreBase:
         ]
 
     def get_user_time_zone(self, fallback: str = "UTC") -> dict[str, str]:
+        cache_key = f"{self._cache_scope_key()}:mailbox_time_zone"
+        cached = self._cache.get(cache_key)
+        if isinstance(cached, dict):
+            return cached
+
         try:
             payload = self._request(
                 "GET",
@@ -112,10 +128,17 @@ class GraphStoreBase:
 
         resolved = str(payload.get("timeZone", "") or "").strip()
         if resolved:
-            return {"time_zone": resolved, "source": "mailboxSettings"}
+            result = {"time_zone": resolved, "source": "mailboxSettings"}
+            (self._cache.__setitem__(cache_key, result) if self._cache_ttl > 0 else self._cache.pop(cache_key, None))
+            return result
         return {"time_zone": fallback, "source": "fallback"}
 
     def resolve_current_user_upn(self) -> str:
+        cache_key = f"{self._cache_scope_key()}:current_user_upn"
+        cached = self._cache.get(cache_key)
+        if isinstance(cached, str) and cached:
+            return cached
+
         payload = self._request(
             "GET",
             f"{self._mailbox_prefix}?$select=mail,userPrincipalName",
@@ -125,6 +148,7 @@ class GraphStoreBase:
         resolved = mail or upn
         if not resolved:
             raise ValueError("Cannot resolve current user mailbox from token")
+        (self._cache.__setitem__(cache_key, resolved) if self._cache_ttl > 0 else self._cache.pop(cache_key, None))
         return resolved
 
 
