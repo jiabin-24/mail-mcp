@@ -81,7 +81,7 @@ last_updated: 2026-07-06
 * topic（草稿与会议附件变更处理（仅附件触发））执行完成后，必须使用返回的 `fileName` + `fileUrl` 回写目标内容：
 	对邮件草稿，在起草或更新正文时将附件信息追加到正文末尾；
 	对会议/日历 event，在创建或更新会议描述（description/body）时追加附件信息；
-	附件信息至少包含附件名称与可访问链接（`fileUrl`）；若存在多个附件，按列表逐条追加。
+	至少包含附件名称与链接；若存在多个附件，按列表逐条追加；链接格式遵循下方“链接输出规则（统一）”。
 * topic（草稿与会议附件变更处理（仅附件触发））执行完成后，必须继续调用对应工具完成落库更新：
 	当目标是会议/日历 event 时，调用 `#sym:calendar_update_event` 更新会议内容（至少包含 event_id 与追加附件信息后的 description/body）；
 	当目标是邮件草稿时，调用 `#sym:mailbox_update_draft` 更新草稿正文（至少包含 draft_id 与追加附件信息后的 body）；
@@ -100,10 +100,16 @@ last_updated: 2026-07-06
 
 会议邀请发送前（即准备填充 `attendees` 前），同样必须完成上述校验并获取用户二次确认。
 
-草稿超链接固定格式：
+链接输出规则（统一）：
 
-* 优先直接使用 `mailbox_compose` 返回的 `webLink`
-* 为确保后续可准确读取邮件标识，输出链接时采用以下 HTML 版本：`<a href="{webLink}" data-draft-id="{draft_id}" target="_blank" rel="noopener noreferrer">{subject}</a>`
+* 优先复用工具返回的 `webLink` / `fileUrl`，保证链接有效。
+* 正文为 `HTML` 时：
+	草稿链接使用 `<a href="{webLink}" data-draft-id="{draft_id}" target="_blank" rel="noopener noreferrer">{subject}</a>`；
+	会议链接使用 `<a href="{eventWebLink}" data-event-id="{event_id}" target="_blank" rel="noopener noreferrer">{eventSubject}</a>`；
+	附件链接使用 `<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`。
+* 正文为 `Text` 或类型未知时：
+	输出纯文本 URL（如 `会议链接: {eventWebLink}`、`访问链接: {fileUrl}`）；
+	禁止输出原始 HTML 标签文本（如 `<a href=...>`）。
 
 校验通过后，必须向用户展示发送摘要并请求二次确认；仅在用户明确确认后才可发送。
 
@@ -153,10 +159,11 @@ last_updated: 2026-07-06
 
 * 收件人：
 * 抄送：
-* 主题（草稿）：{webLink}
+* 主题（草稿）：{draftLink}
+* 会议链接：{eventLink}
 * 正文：
 * （下一行开始一个 Markdown 代码块承载正文全文）
-* 附件：
+* 附件：{attachmentLink}
 * 发送时间：
 * 校验结果：通过 / 不通过
 ```

@@ -38,6 +38,8 @@ class CalendarStore(GraphStoreBase):
             "start": {"dateTime": req.start, "timeZone": event_time_zone},
             "end": {"dateTime": req.end, "timeZone": event_time_zone},
             "isAllDay": bool(req.is_all_day),
+            "isOnlineMeeting": True,
+            "onlineMeetingProvider": "teamsForBusiness",
             "attendees": self._emails_to_attendees(req.attendees or []),
         }
 
