@@ -81,7 +81,7 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         path = request.url.path
         # 健康检查与首页放行，便于探活与基础可用性检查。
-        if path in {"/", "/healthz"}:
+        if path in {"/", "/healthz", "/jobs/dispatch"}:
             return await call_next(request)
 
         authorization = request.headers.get("authorization", "")
