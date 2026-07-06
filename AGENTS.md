@@ -108,7 +108,8 @@ last_updated: 2026-07-06
 	会议链接使用 `<a href="{eventWebLink}" data-event-id="{event_id}" target="_blank" rel="noopener noreferrer">{eventSubject}</a>`；
 	附件链接使用 `<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`。
 * 正文为 `Text` 或类型未知时：
-	输出纯文本 URL（如 `会议链接: {eventWebLink}`、`访问链接: {fileUrl}`）；
+	附件信息使用固定格式：`附件：` 下一行 `{fileName}，链接：{fileUrl}`；若有多个附件，每个附件各占一行；
+	URL 必须保持纯文本，不得包裹在括号、Markdown 链接语法或其他符号中（如 `({fileUrl})`、`[xxx]({fileUrl})`）；
 	禁止输出原始 HTML 标签文本（如 `<a href=...>`）。
 
 校验通过后，必须向用户展示发送摘要并请求二次确认；仅在用户明确确认后才可发送。

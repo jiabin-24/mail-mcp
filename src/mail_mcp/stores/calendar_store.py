@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from html import escape
+import re
 from typing import Any
 from urllib.parse import quote
 
@@ -18,6 +20,7 @@ from ..schemas.request_models import (
 
 GRAPH_QUERY_SAFE = "()':,=-"
 GRAPH_DATETIME_SAFE = "-:.TZ"
+ONLINE_MEETING_BLOB_PATTERN = re.compile(r"(<div id=\"x_join_info\".*?</div>)", re.IGNORECASE | re.DOTALL)
 
 
 class CalendarStore(GraphStoreBase):
@@ -67,6 +70,7 @@ class CalendarStore(GraphStoreBase):
         start_value = req.start
         end_value = req.end
         event_time_zone = self._resolve_event_time_zone(req.time_zone)
+        current_event: dict[str, Any] | None = None
 
         patch_payload: dict[str, Any] = {}
         if req.subject is not None:
@@ -77,7 +81,22 @@ class CalendarStore(GraphStoreBase):
         if req.attendees is not None:
             patch_payload["attendees"] = self._emails_to_attendees(req.attendees)
         if req.description is not None:
-            patch_payload["body"] = {"contentType": "Text", "content": req.description}
+            current_event = self._request(
+                "GET",
+                f"{self._event_path(req.event_id, req.calendar_id)}?$select=body,isOnlineMeeting,onlineMeetingProvider",
+            )
+            current_is_online = bool(current_event.get("isOnlineMeeting", False))
+            if current_is_online:
+                current_body = str((current_event.get("body") or {}).get("content", "") or "")
+                meeting_blob = self._extract_online_meeting_blob(current_body)
+                patch_payload["body"] = {
+                    "contentType": "HTML",
+                    "content": self._merge_online_meeting_body(req.description, meeting_blob),
+                }
+                patch_payload["isOnlineMeeting"] = True
+                patch_payload["onlineMeetingProvider"] = current_event.get("onlineMeetingProvider") or "teamsForBusiness"
+            else:
+                patch_payload["body"] = {"contentType": "Text", "content": req.description}
         if req.location is not None:
             patch_payload["location"] = {"displayName": req.location}
         if req.is_all_day is not None:
@@ -191,3 +210,22 @@ class CalendarStore(GraphStoreBase):
             return time_zone.strip()
 
         return self.get_user_time_zone().get("time_zone", "UTC")
+
+    def _merge_online_meeting_body(self, description: str, meeting_blob: str) -> str:
+        description_html = self._plain_text_to_html(description)
+        if meeting_blob:
+            return f"<div>{description_html}</div><br/>{meeting_blob}"
+        return f"<div>{description_html}</div>"
+
+    def _extract_online_meeting_blob(self, body_html: str) -> str:
+        if not body_html:
+            return ""
+
+        match = ONLINE_MEETING_BLOB_PATTERN.search(body_html)
+        if match:
+            return match.group(1)
+        return ""
+
+    def _plain_text_to_html(self, text: str) -> str:
+        safe = escape(text.strip())
+        return safe.replace("\n", "<br/>")
