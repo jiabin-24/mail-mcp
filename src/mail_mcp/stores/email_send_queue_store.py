@@ -135,7 +135,7 @@ class EmailSendQueueStore(GraphStoreBase):
                 "lasterror": "",
                 "updatedtime": _to_utc_iso(datetime.now(tz=UTC)),
             },
-            mode="MERGE",
+            mode="merge",
         )
 
         return self.get_job(req.job_id)
@@ -255,7 +255,7 @@ class EmailSendQueueStore(GraphStoreBase):
             "lasterror": last_error,
             "updatedtime": _to_utc_iso(datetime.now(tz=UTC)),
         }
-        self._table_client.update_entity(entity=entity, mode="MERGE")
+        self._table_client.update_entity(entity=entity, mode="merge")
 
 
 def _to_utc_iso(value: datetime, require_tz: bool = False) -> str:
