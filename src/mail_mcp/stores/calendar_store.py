@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from html import escape
-import re
 from typing import Any
 from urllib.parse import quote
 
@@ -20,7 +19,6 @@ from ..schemas.request_models import (
 
 GRAPH_QUERY_SAFE = "()':,=-"
 GRAPH_DATETIME_SAFE = "-:.TZ"
-ONLINE_MEETING_BLOB_PATTERN = re.compile(r"(<div id=\"x_join_info\".*?</div>)", re.IGNORECASE | re.DOTALL)
 
 
 class CalendarStore(GraphStoreBase):
@@ -83,28 +81,20 @@ class CalendarStore(GraphStoreBase):
         if req.description is not None:
             current_event = self._request(
                 "GET",
-                f"{self._event_path(req.event_id, req.calendar_id)}?$select=body,isOnlineMeeting,onlineMeetingProvider",
+                f"{self._event_path(req.event_id, req.calendar_id)}?$select=body,isOnlineMeeting",
             )
-            current_is_online = bool(current_event.get("isOnlineMeeting", False))
-            if current_is_online:
-                current_body = str((current_event.get("body") or {}).get("content", "") or "")
-                meeting_blob = self._extract_online_meeting_blob(current_body)
+            if bool(current_event.get("isOnlineMeeting", False)):
+                existing_body_html = str((current_event.get("body") or {}).get("content", "") or "")
                 patch_payload["body"] = {
                     "contentType": "HTML",
-                    "content": self._merge_online_meeting_body(req.description, meeting_blob),
+                    "content": self._compose_online_meeting_body(req.description, existing_body_html),
                 }
-                patch_payload["isOnlineMeeting"] = True
-                patch_payload["onlineMeetingProvider"] = current_event.get("onlineMeetingProvider") or "teamsForBusiness"
             else:
                 patch_payload["body"] = {"contentType": "Text", "content": req.description}
         if req.location is not None:
             patch_payload["location"] = {"displayName": req.location}
         if req.is_all_day is not None:
             patch_payload["isAllDay"] = bool(req.is_all_day)
-
-        if patch_payload:
-            patch_payload["isOnlineMeeting"] = True
-            patch_payload["onlineMeetingProvider"] = "teamsForBusiness"
 
         if not patch_payload:
             return {
@@ -113,11 +103,15 @@ class CalendarStore(GraphStoreBase):
                 "message": "no updates provided",
             }
 
+        patch_payload["isOnlineMeeting"] = True
+        patch_payload["onlineMeetingProvider"] = "teamsForBusiness"
+
         updated = self._request(
             "PATCH",
             self._event_path(req.event_id, req.calendar_id),
             json=patch_payload,
         )
+        
         return map_graph_calendar_event(updated)
 
     def delete_calendar_event(self, req: CalendarDeleteEventInput) -> dict[str, Any] | None:
@@ -215,21 +209,36 @@ class CalendarStore(GraphStoreBase):
 
         return self.get_user_time_zone().get("time_zone", "UTC")
 
-    def _merge_online_meeting_body(self, description: str, meeting_blob: str) -> str:
+    def _compose_online_meeting_body(self, description: str, existing_body_html: str) -> str:
         description_html = self._plain_text_to_html(description)
-        if meeting_blob:
-            return f"<div>{description_html}</div><br/>{meeting_blob}"
+        meeting_block = self._extract_meeting_info_block(existing_body_html)
+        if meeting_block:
+            # Keep only meeting info block to avoid re-merging old business content repeatedly.
+            return f"<div>{description_html}</div><br/>{meeting_block}"
         return f"<div>{description_html}</div>"
-
-    def _extract_online_meeting_blob(self, body_html: str) -> str:
-        if not body_html:
-            return ""
-
-        match = ONLINE_MEETING_BLOB_PATTERN.search(body_html)
-        if match:
-            return match.group(1)
-        return ""
 
     def _plain_text_to_html(self, text: str) -> str:
         safe = escape(text.strip())
         return safe.replace("\n", "<br/>")
+
+    def _extract_meeting_info_block(self, body_html: str) -> str:
+        if not body_html:
+            return ""
+
+        lower = body_html.lower()
+        marker_positions: list[int] = []
+        for marker in (
+            'id="x_join_info"',
+            "microsoft teams meeting",
+            "join microsoft teams meeting",
+            "join:",
+        ):
+            idx = lower.find(marker)
+            if idx >= 0:
+                marker_positions.append(idx)
+
+        if not marker_positions:
+            return ""
+
+        start = min(marker_positions)
+        return body_html[start:].strip()
