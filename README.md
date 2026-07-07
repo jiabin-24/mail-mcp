@@ -200,8 +200,13 @@ server {
 
 ## 3. 已提供的工具（Tools）
 
+### 3.1 基础与健康检查
+
 - `ping()`
   - 健康检查
+
+### 3.2 邮件读取与检索
+
 - `mailbox_list_folders()`
   - 列出文件夹（`inbox` / `drafts` / `sent`）
 - `mailbox_list_messages(folder="inbox", limit=20)`
@@ -210,12 +215,22 @@ server {
   - 按 ID 获取邮件详情
 - `mailbox_search(search=None, filter=None, folder="inbox", limit=20)`
   - 透传 Graph `$search` / `$filter` 查询邮件
-- `mailbox_list_tenant_users(search=None, limit=20)`
-  - 查询租户内用户与邮箱（`displayName` / `mail` / `userPrincipalName`）
-- `mailbox_get_user_time_zone()`
-  - 获取当前用户邮箱时区（优先返回 `mailboxSettings.timeZone`，失败时回退 `UTC`）
+
+### 3.3 草稿与发送
+
 - `mailbox_compose(to, subject, body, cc=None, bcc=None)`
   - 生成草稿
+- `mailbox_reply_compose(message_id, body)`
+  - 基于原邮件生成回复草稿（自动保留历史上下文引用）
+- `mailbox_update_draft(draft_id, to=None, subject=None, body=None, cc=None, bcc=None)`
+  - 修改现有草稿（支持更新收件人、主题、正文、抄送、密送）
+- `mailbox_send_draft(draft_id)`
+  - 发送草稿并移到 `sent`
+- `mailbox_revoke_draft(draft_id)`
+  - 撤销草稿（删除草稿）
+
+### 3.4 日历事件
+
 - `calendar_list_events(start=None, end=None, search=None, limit=20)`
   - 查询日历事件（可选时间范围；若不传时间范围，默认返回未来 30 天）
 - `calendar_get_event(event_id, calendar_id=None)`
@@ -228,14 +243,16 @@ server {
   - 删除日历事件
 - `calendar_respond_invitation(event_id, response, comment=None, send_response=True, calendar_id=None)`
   - 响应会议邀请（`accept` / `decline` / `tentative`）
-- `mailbox_reply_compose(message_id, body)`
-  - 基于原邮件生成回复草稿（自动保留历史上下文引用）
-- `mailbox_update_draft(draft_id, to=None, subject=None, body=None, cc=None, bcc=None)`
-  - 修改现有草稿（支持更新收件人、主题、正文、抄送、密送）
-- `mailbox_send_draft(draft_id)`
-  - 发送草稿并移到 `sent`
-- `mailbox_revoke_draft(draft_id)`
-  - 撤销草稿（删除草稿）
+
+### 3.5 用户与租户信息
+
+- `mailbox_list_tenant_users(search=None, limit=20)`
+  - 查询租户内用户与邮箱（`displayName` / `mail` / `userPrincipalName`）
+- `mailbox_get_user_time_zone()`
+  - 获取当前用户邮箱时区（优先返回 `mailboxSettings.timeZone`，失败时回退 `UTC`）
+
+### 3.6 定时发送队列
+
 - `mailbox_create_email_draft_send_job(draft_email_id, schedule_send_time, subject=None, status="scheduled", sent_time=None)`
   - 往 Azure Table `EmailSendQueue` 插入定时发送任务（`draftemailid`、`schedulesendtime`、`status`、`senttime`、`subject`、`userupn`）
   - `schedule_send_time` 需传带时区偏移的 ISO 8601 时间（例如 `2026-07-05T06:00:00Z` 或 `2026-07-05T14:00:00+08:00`），服务端会统一转换为 UTC 后入库
