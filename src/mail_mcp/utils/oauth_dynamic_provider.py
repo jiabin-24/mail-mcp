@@ -5,8 +5,8 @@ import logging
 import os
 import secrets
 import time
-from dataclasses import dataclass
-from typing import Any, Protocol
+from dataclasses import asdict, dataclass
+from typing import Any, Protocol, TypeVar
 from urllib.parse import urlencode
 
 import httpx
@@ -24,6 +24,8 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 LOGGER = logging.getLogger("mail_mcp.oauth")
+
+_ModelT = TypeVar("_ModelT")
 
 
 class OAuthClientRegistry(Protocol):
@@ -163,25 +165,28 @@ class DynamicOAuthProvider(
             if cached is not None:
                 return cached
 
-            if self._client_registry is not None:
-                try:
-                    persisted = self._client_registry.get_client(client_id)
-                except Exception as exc:
-                    LOGGER.warning("load oauth client from registry failed: %s", exc)
-                    return None
-                if persisted is not None:
-                    self._clients[client_id] = persisted
-                return persisted
-            return None
+        # 内存未命中时回源到持久层，命中后再回填内存缓存。
+        persisted = self._call_registry(
+            self._client_registry,
+            "load oauth client from registry",
+            "get_client",
+            client_id,
+            default=None,
+        )
+        if persisted is not None:
+            async with self._lock:
+                self._clients[client_id] = persisted
+        return persisted
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         async with self._lock:
             self._clients[client_info.client_id] = client_info
-            if self._client_registry is not None:
-                try:
-                    self._client_registry.upsert_client(client_info)
-                except Exception as exc:
-                    LOGGER.warning("persist oauth client to registry failed: %s", exc)
+        self._call_registry(
+            self._client_registry,
+            "persist oauth client to registry",
+            "upsert_client",
+            client_info,
+        )
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         state_id = secrets.token_urlsafe(24)
@@ -195,15 +200,19 @@ class DynamicOAuthProvider(
             self._prune_expired(now)
             self._pending_auth[state_id] = pending
 
-        if self._token_registry is not None:
-            try:
-                self._token_registry.upsert_pending_auth(
-                    state_id=state_id,
-                    payload=_pending_auth_to_payload(pending),
-                    expires_at=pending.expires_at,
-                )
-            except Exception as exc:
-                LOGGER.warning("persist pending auth to token registry failed: %s", exc)
+        # 状态信息落库，确保服务重启后 OAuth 回调仍可继续。
+        self._call_registry(
+            self._token_registry,
+            "persist pending auth to token registry",
+            "upsert_pending_auth",
+            state_id,
+            {
+                "client_id": pending.client_id,
+                "expires_at": pending.expires_at,
+                "params": _model_to_payload(pending.params),
+            },
+            pending.expires_at,
+        )
 
         aad_state = state_id
         query = urlencode(
@@ -230,20 +239,19 @@ class DynamicOAuthProvider(
                     return None
                 return code
 
-        if self._token_registry is None:
-            return None
-
-        try:
-            persisted = self._token_registry.get_authorization_code(authorization_code)
-        except Exception as exc:
-            LOGGER.warning("load authorization code from token registry failed: %s", exc)
-            return None
+        persisted = self._call_registry(
+            self._token_registry,
+            "load authorization code from token registry",
+            "get_authorization_code",
+            authorization_code,
+            default=None,
+        )
 
         if persisted is None:
             return None
 
         code_payload, external_payload = persisted
-        code = _authorization_code_from_payload(code_payload)
+        code = _model_from_payload(AuthorizationCode, code_payload)
         if code is None or code.client_id != client.client_id:
             return None
 
@@ -271,6 +279,7 @@ class DynamicOAuthProvider(
         if external is None:
             raise TokenError("invalid_grant", "authorization code not found or already consumed")
 
+        # 授权码是一次性凭据，成功进入换 token 流程后立即清理。
         self._cleanup_authorization_code_from_registry(authorization_code.code)
 
         access_token_value = secrets.token_urlsafe(48)
@@ -299,25 +308,12 @@ class DynamicOAuthProvider(
             self._access_external_tokens[access_token_value] = external
             self._refresh_external_tokens[refresh_token_value] = external
 
-        if self._token_registry is not None:
-            access_payload = _access_token_to_payload(access_token)
-            refresh_payload = _refresh_token_to_payload(refresh_token)
-            external_payload = _external_bundle_to_payload(external)
-            try:
-                self._token_registry.upsert_access_token(
-                    token=access_token_value,
-                    payload=access_payload,
-                    external_payload=external_payload,
-                    expires_at=access_token.expires_at,
-                )
-                self._token_registry.upsert_refresh_token(
-                    token=refresh_token_value,
-                    payload=refresh_payload,
-                    external_payload=external_payload,
-                    expires_at=refresh_token.expires_at,
-                )
-            except Exception as exc:
-                LOGGER.warning("persist exchanged tokens to token registry failed: %s", exc)
+        self._persist_token_pair(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            external=external,
+            warning_message="persist exchanged tokens to token registry",
+        )
 
         return OAuthToken(
             access_token=access_token_value,
@@ -339,20 +335,19 @@ class DynamicOAuthProvider(
                     return None
                 return token
 
-        if self._token_registry is None:
-            return None
-
-        try:
-            persisted = self._token_registry.get_refresh_token(refresh_token)
-        except Exception as exc:
-            LOGGER.warning("load refresh token from token registry failed: %s", exc)
-            return None
+        persisted = self._call_registry(
+            self._token_registry,
+            "load refresh token from token registry",
+            "get_refresh_token",
+            refresh_token,
+            default=None,
+        )
 
         if persisted is None:
             return None
 
         token_payload, external_payload = persisted
-        token = _refresh_token_from_payload(token_payload)
+        token = _model_from_payload(RefreshToken, token_payload)
         if token is None or token.client_id != client.client_id:
             return None
 
@@ -374,13 +369,14 @@ class DynamicOAuthProvider(
         async with self._lock:
             external = self._refresh_external_tokens.get(refresh_token.token)
 
-        if external is None and self._token_registry is not None:
-            try:
-                persisted = self._token_registry.get_refresh_token(refresh_token.token)
-            except Exception as exc:
-                LOGGER.warning("load refresh token external mapping from token registry failed: %s", exc)
-                persisted = None
-
+        if external is None:
+            persisted = self._call_registry(
+                self._token_registry,
+                "load refresh token external mapping from token registry",
+                "get_refresh_token",
+                refresh_token.token,
+                default=None,
+            )
             if persisted is not None:
                 _, external_payload = persisted
                 if external_payload is not None:
@@ -389,6 +385,7 @@ class DynamicOAuthProvider(
         if external is None:
             raise TokenError("invalid_grant", "refresh token does not have a delegated token mapping")
 
+        # 先用旧映射换取新的 Graph token，再签发新的 MCP token 对。
         refreshed_external = await self._refresh_external_graph_token(external)
 
         now = int(time.time())
@@ -421,26 +418,19 @@ class DynamicOAuthProvider(
             self._access_external_tokens[access_token_value] = refreshed_external
             self._refresh_external_tokens[new_refresh_token_value] = refreshed_external
 
-        if self._token_registry is not None:
-            access_payload = _access_token_to_payload(access_token)
-            refresh_payload = _refresh_token_to_payload(new_refresh_token)
-            external_payload = _external_bundle_to_payload(refreshed_external)
-            try:
-                self._token_registry.delete_refresh_token(refresh_token.token)
-                self._token_registry.upsert_access_token(
-                    token=access_token_value,
-                    payload=access_payload,
-                    external_payload=external_payload,
-                    expires_at=access_token.expires_at,
-                )
-                self._token_registry.upsert_refresh_token(
-                    token=new_refresh_token_value,
-                    payload=refresh_payload,
-                    external_payload=external_payload,
-                    expires_at=new_refresh_token.expires_at,
-                )
-            except Exception as exc:
-                LOGGER.warning("persist refresh exchange result to token registry failed: %s", exc)
+        self._call_registry(
+            self._token_registry,
+            "persist refresh exchange result to token registry",
+            "delete_refresh_token",
+            refresh_token.token,
+        )
+        # refresh token 轮换：删除旧 refresh，写入新的 access/refresh 对。
+        self._persist_token_pair(
+            access_token=access_token,
+            refresh_token=new_refresh_token,
+            external=refreshed_external,
+            warning_message="persist refresh exchange result to token registry",
+        )
 
         return OAuthToken(
             access_token=access_token_value,
@@ -452,6 +442,7 @@ class DynamicOAuthProvider(
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         now = int(time.time())
+        # 热路径优先命中进程内缓存，减少 Table 往返开销。
         async with self._lock:
             access = self._access_tokens.get(token)
             if access is not None:
@@ -461,20 +452,19 @@ class DynamicOAuthProvider(
                 else:
                     return access
 
-        if self._token_registry is None:
-            return None
-
-        try:
-            persisted = self._token_registry.get_access_token(token)
-        except Exception as exc:
-            LOGGER.warning("load access token from token registry failed: %s", exc)
-            return None
+        persisted = self._call_registry(
+            self._token_registry,
+            "load access token from token registry",
+            "get_access_token",
+            token,
+            default=None,
+        )
 
         if persisted is None:
             return None
 
         access_payload, external_payload = persisted
-        access = _access_token_from_payload(access_payload)
+        access = _model_from_payload(AccessToken, access_payload)
         if access is None:
             return None
 
@@ -495,29 +485,17 @@ class DynamicOAuthProvider(
             access = self._access_tokens.pop(token.token, None)
             if access is not None:
                 self._access_external_tokens.pop(access.token, None)
-                if self._token_registry is not None:
-                    try:
-                        self._token_registry.delete_access_token(access.token)
-                    except Exception as exc:
-                        LOGGER.warning("delete access token from token registry failed: %s", exc)
+                self._delete_access_token_from_registry(access.token)
                 return
 
             refresh = self._refresh_tokens.pop(token.token, None)
             if refresh is not None:
                 self._refresh_external_tokens.pop(refresh.token, None)
-                if self._token_registry is not None:
-                    try:
-                        self._token_registry.delete_refresh_token(refresh.token)
-                    except Exception as exc:
-                        LOGGER.warning("delete refresh token from token registry failed: %s", exc)
+                self._delete_refresh_token_from_registry(refresh.token)
                 return
 
-        if self._token_registry is not None:
-            try:
-                self._token_registry.delete_access_token(token.token)
-                self._token_registry.delete_refresh_token(token.token)
-            except Exception as exc:
-                LOGGER.warning("delete token from token registry failed: %s", exc)
+        self._delete_access_token_from_registry(token.token)
+        self._delete_refresh_token_from_registry(token.token)
 
     async def build_callback_redirect(self, query_params: dict[str, str]) -> RedirectResponse:
         state = query_params.get("state", "")
@@ -525,15 +503,24 @@ class DynamicOAuthProvider(
         async with self._lock:
             pending = self._pending_auth.pop(state, None)
 
-        if pending is None and self._token_registry is not None:
-            try:
-                pending_payload = self._token_registry.pop_pending_auth(state)
-            except Exception as exc:
-                LOGGER.warning("pop pending auth from token registry failed: %s", exc)
-                pending_payload = None
-
+        if pending is None:
+            # 回调请求可能落到新实例，需从持久层恢复 pending state。
+            pending_payload = self._call_registry(
+                self._token_registry,
+                "pop pending auth from token registry",
+                "pop_pending_auth",
+                state,
+                default=None,
+            )
             if pending_payload is not None:
-                pending = _pending_auth_from_payload(pending_payload)
+                try:
+                    pending = PendingAuthorization(
+                        client_id=str(pending_payload["client_id"]),
+                        params=AuthorizationParams.model_validate(pending_payload["params"]),
+                        expires_at=float(pending_payload["expires_at"]),
+                    )
+                except Exception:
+                    pending = None
 
         if pending is None or pending.expires_at < time.time():
             return RedirectResponse(
@@ -588,16 +575,15 @@ class DynamicOAuthProvider(
             self._auth_codes[issued_code] = auth_code
             self._code_external_tokens[issued_code] = external
 
-        if self._token_registry is not None:
-            try:
-                self._token_registry.upsert_authorization_code(
-                    code=issued_code,
-                    payload=_authorization_code_to_payload(auth_code),
-                    external_payload=_external_bundle_to_payload(external),
-                    expires_at=auth_code.expires_at,
-                )
-            except Exception as exc:
-                LOGGER.warning("persist authorization code to token registry failed: %s", exc)
+        self._call_registry(
+            self._token_registry,
+            "persist authorization code to token registry",
+            "upsert_authorization_code",
+            issued_code,
+            _model_to_payload(auth_code),
+            _external_bundle_to_payload(external),
+            auth_code.expires_at,
+        )
 
         redirect_url = construct_redirect_uri(
             str(original_params.redirect_uri),
@@ -618,6 +604,7 @@ class DynamicOAuthProvider(
             return None
 
         if external.graph_expires_at is not None and external.graph_expires_at <= now:
+            # 外部 Graph token 过期时尝试刷新，并把最新映射回写持久层。
             refreshed = await self._refresh_external_graph_token(external)
             async with self._lock:
                 if mcp_access_token in self._access_external_tokens:
@@ -643,20 +630,20 @@ class DynamicOAuthProvider(
         if access is not None and external is not None:
             return access, external
 
-        if self._token_registry is None:
-            return access, external
-
-        try:
-            persisted = self._token_registry.get_access_token(mcp_access_token)
-        except Exception as exc:
-            LOGGER.warning("load graph token mapping from token registry failed: %s", exc)
-            return access, external
+        # access token 或外部映射任一缺失时，从持久层恢复并回填内存。
+        persisted = self._call_registry(
+            self._token_registry,
+            "load graph token mapping from token registry",
+            "get_access_token",
+            mcp_access_token,
+            default=None,
+        )
 
         if persisted is None:
             return access, external
 
         access_payload, external_payload = persisted
-        loaded_access = _access_token_from_payload(access_payload)
+        loaded_access = _model_from_payload(AccessToken, access_payload)
         loaded_external = (
             _external_bundle_from_payload(external_payload)
             if external_payload is not None
@@ -682,14 +669,16 @@ class DynamicOAuthProvider(
         authorization_code: str,
         external: ExternalTokenBundle | None,
     ) -> ExternalTokenBundle | None:
-        if external is not None or self._token_registry is None:
+        if external is not None:
             return external
 
-        try:
-            persisted = self._token_registry.pop_authorization_code(authorization_code)
-        except Exception as exc:
-            LOGGER.warning("pop authorization code from token registry failed: %s", exc)
-            return None
+        persisted = self._call_registry(
+            self._token_registry,
+            "pop authorization code from token registry",
+            "pop_authorization_code",
+            authorization_code,
+            default=None,
+        )
 
         if persisted is None:
             return None
@@ -701,22 +690,28 @@ class DynamicOAuthProvider(
         return _external_bundle_from_payload(external_payload)
 
     def _cleanup_authorization_code_from_registry(self, authorization_code: str) -> None:
-        if self._token_registry is None:
-            return
-
-        try:
-            self._token_registry.pop_authorization_code(authorization_code)
-        except Exception as exc:
-            LOGGER.warning("cleanup authorization code from token registry failed: %s", exc)
+        self._call_registry(
+            self._token_registry,
+            "cleanup authorization code from token registry",
+            "pop_authorization_code",
+            authorization_code,
+        )
 
     def _delete_access_token_from_registry(self, token: str) -> None:
-        if self._token_registry is None:
-            return
+        self._call_registry(
+            self._token_registry,
+            "delete access token from token registry",
+            "delete_access_token",
+            token,
+        )
 
-        try:
-            self._token_registry.delete_access_token(token)
-        except Exception as exc:
-            LOGGER.warning("delete expired access token from token registry failed: %s", exc)
+    def _delete_refresh_token_from_registry(self, token: str) -> None:
+        self._call_registry(
+            self._token_registry,
+            "delete refresh token from token registry",
+            "delete_refresh_token",
+            token,
+        )
 
     def _persist_access_token_bundle(
         self,
@@ -725,18 +720,65 @@ class DynamicOAuthProvider(
         access: AccessToken,
         external: ExternalTokenBundle,
     ) -> None:
-        if self._token_registry is None:
-            return
+        self._call_registry(
+            self._token_registry,
+            "persist refreshed external token mapping",
+            "upsert_access_token",
+            token,
+            _model_to_payload(access),
+            _external_bundle_to_payload(external),
+            access.expires_at,
+        )
+
+    def _persist_token_pair(
+        self,
+        *,
+        access_token: AccessToken,
+        refresh_token: RefreshToken,
+        external: ExternalTokenBundle,
+        warning_message: str,
+    ) -> None:
+        external_payload = _external_bundle_to_payload(external)
+        self._call_registry(
+            self._token_registry,
+            warning_message,
+            "upsert_access_token",
+            access_token.token,
+            _model_to_payload(access_token),
+            external_payload,
+            access_token.expires_at,
+        )
+        self._call_registry(
+            self._token_registry,
+            warning_message,
+            "upsert_refresh_token",
+            refresh_token.token,
+            _model_to_payload(refresh_token),
+            external_payload,
+            refresh_token.expires_at,
+        )
+
+    def _call_registry(
+        self,
+        registry: Any,
+        warning_message: str,
+        method_name: str,
+        *args,
+        default: Any = None,
+    ) -> Any:
+        # 统一封装 registry 调用：空实现、缺方法、异常都按 default 降级。
+        if registry is None:
+            return default
+
+        method = getattr(registry, method_name, None)
+        if method is None:
+            return default
 
         try:
-            self._token_registry.upsert_access_token(
-                token=token,
-                payload=_access_token_to_payload(access),
-                external_payload=_external_bundle_to_payload(external),
-                expires_at=access.expires_at,
-            )
+            return method(*args)
         except Exception as exc:
-            LOGGER.warning("persist refreshed external token mapping failed: %s", exc)
+            LOGGER.warning("%s failed: %s", warning_message, exc)
+            return default
 
     async def _exchange_entra_code_for_graph_tokens(self, code: str) -> ExternalTokenBundle:
         token_endpoint = f"https://login.microsoftonline.com/{self.tenant_id}/oauth2/v2.0/token"
@@ -842,126 +884,19 @@ def get_dynamic_oauth_config_from_env() -> dict[str, Any] | None:
     }
 
 
-def _pending_auth_to_payload(value: PendingAuthorization) -> dict[str, Any]:
-    return {
-        "client_id": value.client_id,
-        "expires_at": value.expires_at,
-        "params": {
-            "redirect_uri": str(value.params.redirect_uri),
-            "state": value.params.state,
-            "scopes": list(value.params.scopes or []),
-            "code_challenge": value.params.code_challenge,
-            "resource": value.params.resource,
-            "redirect_uri_provided_explicitly": value.params.redirect_uri_provided_explicitly,
-        },
-    }
+def _model_to_payload(value: Any) -> dict[str, Any]:
+    return value.model_dump(mode="json")
 
 
-def _pending_auth_from_payload(payload: dict[str, Any]) -> PendingAuthorization | None:
+def _model_from_payload(model_cls: type[_ModelT], payload: dict[str, Any]) -> _ModelT | None:
     try:
-        params_raw = payload["params"]
-        params = AuthorizationParams(
-            redirect_uri=str(params_raw["redirect_uri"]),
-            state=params_raw.get("state"),
-            scopes=list(params_raw.get("scopes") or []),
-            code_challenge=str(params_raw.get("code_challenge") or ""),
-            resource=(
-                str(params_raw.get("resource"))
-                if params_raw.get("resource") is not None
-                else None
-            ),
-            redirect_uri_provided_explicitly=bool(
-                params_raw.get("redirect_uri_provided_explicitly", False)
-            ),
-        )
-        return PendingAuthorization(
-            client_id=str(payload["client_id"]),
-            params=params,
-            expires_at=float(payload["expires_at"]),
-        )
-    except Exception:
-        return None
-
-
-def _authorization_code_to_payload(value: AuthorizationCode) -> dict[str, Any]:
-    return {
-        "code": value.code,
-        "scopes": list(value.scopes or []),
-        "expires_at": value.expires_at,
-        "client_id": value.client_id,
-        "code_challenge": value.code_challenge,
-        "redirect_uri": str(value.redirect_uri),
-        "redirect_uri_provided_explicitly": value.redirect_uri_provided_explicitly,
-        "resource": value.resource,
-    }
-
-
-def _authorization_code_from_payload(payload: dict[str, Any]) -> AuthorizationCode | None:
-    try:
-        return AuthorizationCode(
-            code=str(payload["code"]),
-            scopes=list(payload.get("scopes") or []),
-            expires_at=float(payload["expires_at"]),
-            client_id=str(payload["client_id"]),
-            code_challenge=str(payload.get("code_challenge") or ""),
-            redirect_uri=str(payload["redirect_uri"]),
-            redirect_uri_provided_explicitly=bool(payload.get("redirect_uri_provided_explicitly", False)),
-            resource=(str(payload.get("resource")) if payload.get("resource") is not None else None),
-        )
-    except Exception:
-        return None
-
-
-def _access_token_to_payload(value: AccessToken) -> dict[str, Any]:
-    return {
-        "token": value.token,
-        "client_id": value.client_id,
-        "scopes": list(value.scopes or []),
-        "expires_at": value.expires_at,
-        "resource": value.resource,
-    }
-
-
-def _access_token_from_payload(payload: dict[str, Any]) -> AccessToken | None:
-    try:
-        return AccessToken(
-            token=str(payload["token"]),
-            client_id=str(payload["client_id"]),
-            scopes=list(payload.get("scopes") or []),
-            expires_at=(int(payload["expires_at"]) if payload.get("expires_at") is not None else None),
-            resource=(str(payload.get("resource")) if payload.get("resource") is not None else None),
-        )
-    except Exception:
-        return None
-
-
-def _refresh_token_to_payload(value: RefreshToken) -> dict[str, Any]:
-    return {
-        "token": value.token,
-        "client_id": value.client_id,
-        "scopes": list(value.scopes or []),
-        "expires_at": value.expires_at,
-    }
-
-
-def _refresh_token_from_payload(payload: dict[str, Any]) -> RefreshToken | None:
-    try:
-        return RefreshToken(
-            token=str(payload["token"]),
-            client_id=str(payload["client_id"]),
-            scopes=list(payload.get("scopes") or []),
-            expires_at=(int(payload["expires_at"]) if payload.get("expires_at") is not None else None),
-        )
+        return model_cls.model_validate(payload)
     except Exception:
         return None
 
 
 def _external_bundle_to_payload(value: ExternalTokenBundle) -> dict[str, Any]:
-    return {
-        "graph_access_token": value.graph_access_token,
-        "graph_refresh_token": value.graph_refresh_token,
-        "graph_expires_at": value.graph_expires_at,
-    }
+    return asdict(value)
 
 
 def _external_bundle_from_payload(payload: dict[str, Any]) -> ExternalTokenBundle | None:
@@ -970,18 +905,13 @@ def _external_bundle_from_payload(payload: dict[str, Any]) -> ExternalTokenBundl
         if not access_token:
             return None
 
-        refresh_token = payload.get("graph_refresh_token")
-        if refresh_token is not None:
-            refresh_token = str(refresh_token).strip() or None
+        cleaned = dict(payload)
+        cleaned["graph_access_token"] = access_token
+        if cleaned.get("graph_refresh_token") is not None:
+            cleaned["graph_refresh_token"] = str(cleaned["graph_refresh_token"]).strip() or None
+        if cleaned.get("graph_expires_at") is not None:
+            cleaned["graph_expires_at"] = int(cleaned["graph_expires_at"])
 
-        expires_at = payload.get("graph_expires_at")
-        if expires_at is not None:
-            expires_at = int(expires_at)
-
-        return ExternalTokenBundle(
-            graph_access_token=access_token,
-            graph_refresh_token=refresh_token,
-            graph_expires_at=expires_at,
-        )
+        return ExternalTokenBundle(**cleaned)
     except Exception:
         return None
