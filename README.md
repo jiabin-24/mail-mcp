@@ -117,6 +117,36 @@ Azure Table 所需 RBAC（Service Principal）：
 
 当前实现固定使用 `/me` 路由访问 Outlook 邮箱。
 
+### 2.1.1 OAuth 2.0 Dynamic discovery（新增）
+
+服务已支持 MCP OAuth 发现与动态客户端注册（DCR）。
+
+当 `MCP_OAUTH_DYNAMIC_DISCOVERY_ENABLED=true` 且以下环境变量配置完整时，服务会自动启用：
+
+- `MCP_PUBLIC_BASE_URL`（例如 `https://<app-name>.azurewebsites.net`）
+- `MCP_OAUTH_ISSUER_URL`（可选，默认同 `MCP_PUBLIC_BASE_URL`）
+- `MCP_OAUTH_CALLBACK_URL`（可选，默认 `${issuer}/oauth/callback`）
+- `MCP_OAUTH_TENANT_ID`
+- `MCP_OAUTH_CLIENT_ID`
+- `MCP_OAUTH_CLIENT_SECRET`
+- `MCP_OAUTH_ENTRA_SCOPES`（可选）
+
+启用后会暴露以下端点：
+
+- `/.well-known/oauth-authorization-server`
+- `/.well-known/oauth-protected-resource`
+- `/register`（动态客户端注册）
+- `/authorize`
+- `/token`
+- `/revoke`
+- `/oauth/callback`（与 Entra ID 交互的回调）
+
+说明：
+
+- MCP 访问令牌由本服务签发并校验。
+- 实际调用 Microsoft Graph 使用的是服务在 OAuth 登录过程中换取的用户委托令牌。
+- 若未启用 Dynamic discovery 配置，服务保持兼容模式（直接接收 `Authorization: Bearer <Graph token>`）。
+
 鉴权说明：
 
 - `/mcp` 调用必须携带 `Authorization: Bearer <token>`

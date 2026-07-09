@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
+import inspect
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import httpx
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -66,47 +67,74 @@ def _token_cache_ttl_seconds() -> int:
     return max(0, parsed)
 
 class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
-    """Capture delegated bearer token preview and store token in request context."""
+    """Capture delegated bearer token and store resolved token in request context."""
 
     def __init__(
         self,
         app: Any,
         token_context: contextvars.ContextVar[str | None],
+        token_resolver: Callable[[str], str | None | Awaitable[str | None]] | None = None,
+        require_bearer_token: bool = True,
     ) -> None:
         super().__init__(app)
         self._token_context = token_context
+        self._token_resolver = token_resolver
+        self._require_bearer_token = require_bearer_token
         self._token_cache: dict[str, float] = {}
         self._graph_base = os.getenv(GRAPH_BASE_URL_ENV, GRAPH_DEFAULT_BASE_URL).rstrip("/")
 
     async def dispatch(self, request, call_next):
-        path = request.url.path
         # 健康检查与首页放行，便于探活与基础可用性检查。
-        if path in {"/", "/healthz", "/jobs/dispatch"}:
+        if self._is_public_path(request.url.path):
             return await call_next(request)
 
-        authorization = request.headers.get("authorization", "")
-        # 受保护接口必须携带 Bearer token。
-        if not authorization or not _has_bearer_prefix(authorization):
-            return JSONResponse({"error": "missing or invalid Authorization header"}, status_code=401)
+        token_value, error = self._extract_request_token(request.headers.get("authorization", ""))
+        if error is not None:
+            return error
 
-        token_value: str | None = None
-        if authorization:
-            token_value = _extract_token(authorization)
-            if not token_value.strip():
-                return JSONResponse({"error": "empty bearer token"}, status_code=401)
-            _log_token(token_value)
+        resolved_token = await self._resolve_token(token_value)
 
-        if token_value and _should_validate_token():
+        if self._should_validate_graph_token(resolved_token, token_value):
             # 对传入 token 做有效性校验（缓存命中时不访问 Graph）。
-            is_valid = await self._validate_token(token_value)
+            is_valid = await self._validate_token(token_value or "")
             if not is_valid:
                 return JSONResponse({"error": "invalid or expired token"}, status_code=401)
 
-        token_ctx = self._token_context.set(token_value)
+        token_ctx = self._token_context.set(resolved_token or token_value)
         try:
             return await call_next(request)
         finally:
             self._token_context.reset(token_ctx)
+
+    def _is_public_path(self, path: str) -> bool:
+        return path in {"/", "/healthz", "/jobs/dispatch"}
+
+    def _extract_request_token(self, authorization: str) -> tuple[str | None, JSONResponse | None]:
+        # 在仅资源服务器模式下，保持历史行为：要求 Bearer token。
+        if self._require_bearer_token and (not authorization or not _has_bearer_prefix(authorization)):
+            return None, JSONResponse({"error": "missing or invalid Authorization header"}, status_code=401)
+
+        if not authorization:
+            return None, None
+
+        token_value = _extract_token(authorization)
+        if not token_value.strip():
+            if self._require_bearer_token:
+                return None, JSONResponse({"error": "empty bearer token"}, status_code=401)
+            return None, None
+
+        _log_token(token_value)
+        return token_value, None
+
+    async def _resolve_token(self, token_value: str | None) -> str | None:
+        if not token_value or self._token_resolver is None:
+            return token_value
+
+        maybe_resolved = self._token_resolver(token_value)
+        return await maybe_resolved if inspect.isawaitable(maybe_resolved) else maybe_resolved
+
+    def _should_validate_graph_token(self, resolved_token: str | None, token_value: str | None) -> bool:
+        return bool((resolved_token or token_value) and _should_validate_token() and self._token_resolver is None)
 
     async def _validate_token(self, token: str) -> bool:
         ttl = _token_cache_ttl_seconds()

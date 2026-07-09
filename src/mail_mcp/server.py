@@ -4,6 +4,7 @@ import contextvars
 import os
 
 from dotenv import load_dotenv
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
@@ -14,6 +15,7 @@ from .stores.graph_store import GraphStoreBase
 from .tools.calendar_tools import register_calendar_tools
 from .tools.email_tools import register_email_tools
 from .tools.email_queue_tools import register_email_queue_tools
+from .utils.oauth_dynamic_provider import DynamicOAuthProvider, get_dynamic_oauth_config_from_env
 from .utils.biz_logger import configure_default_loggers
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
@@ -23,14 +25,38 @@ configure_default_loggers()
 CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_access_token", default=None
 )
+MCP_SCOPE = "mail.mcp"
 TOKEN_PROVIDER = CURRENT_ACCESS_TOKEN.get
 EMAIL_STORE, CALENDAR_STORE, GRAPH_STORE = (EmailStore(token_provider=TOKEN_PROVIDER), CalendarStore(token_provider=TOKEN_PROVIDER), GraphStoreBase(token_provider=TOKEN_PROVIDER))
 EMAIL_SEND_QUEUE_STORE = EmailSendQueueStore(token_provider=TOKEN_PROVIDER)
+
+_oauth_provider: DynamicOAuthProvider | None = None
+_auth_settings: AuthSettings | None = None
+_oauth_config = get_dynamic_oauth_config_from_env()
+if _oauth_config:
+    _oauth_provider = DynamicOAuthProvider(**_oauth_config)
+    issuer_url = _oauth_config["issuer_url"]
+    _auth_settings = AuthSettings(
+        issuer_url=issuer_url,
+        resource_server_url=issuer_url,
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=[MCP_SCOPE],
+            default_scopes=[MCP_SCOPE],
+            client_secret_expiry_seconds=365 * 24 * 3600,
+        ),
+        revocation_options=RevocationOptions(enabled=True),
+        required_scopes=[MCP_SCOPE],
+        service_documentation_url=(os.getenv("MCP_OAUTH_SERVICE_DOCUMENTATION_URL") or issuer_url),
+    )
+
 APP = FastMCP(
     "mail-assistant",
+    auth_server_provider=_oauth_provider,
     host=os.getenv("MCP_HOST", "0.0.0.0"),
     port=int(os.getenv("MCP_PORT", os.getenv("PORT", "80"))),
     streamable_http_path=os.getenv("MCP_PATH", "/mcp"),
+    auth=_auth_settings,
 )
 register_calendar_tools(APP, CALENDAR_STORE)
 register_email_tools(APP, EMAIL_STORE)
@@ -52,6 +78,14 @@ def mailbox_get_user_time_zone() -> dict[str, str]:
 def ping() -> dict[str, str]:
     """Health check tool."""
     return {"status": "ok", "service": "mail-assistant"}
+
+
+if _oauth_provider is not None:
+
+    @APP.custom_route("/oauth/callback", methods=["GET"])
+    async def oauth_callback(request):
+        params = dict(request.query_params.items())
+        return await _oauth_provider.build_callback_redirect(params)
 
 def _build_asgi_app():
     starlette_app = APP.streamable_http_app()
@@ -89,6 +123,8 @@ def _build_asgi_app():
     starlette_app.add_middleware(
         OAuthTokenLogMiddleware,
         token_context=CURRENT_ACCESS_TOKEN,
+        token_resolver=(_oauth_provider.resolve_graph_access_token if _oauth_provider else None),
+        require_bearer_token=(_oauth_provider is None),
     )
     return starlette_app
 
