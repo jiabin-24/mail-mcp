@@ -102,8 +102,13 @@ $env:STORAGE="stmailmcpprod001"       # 全局唯一，小写字母数字
     - 本项目容器默认监听 80 端口。建议至少配置以下环境变量：
     `az webapp config appsettings set --name $env:APP --resource-group $env:RG --settings MCP_HOST=0.0.0.0 MCP_PORT=80 MCP_PATH=/mcp`
 
+        - 配置策略建议：
+            - 将非敏感默认值写入并提交 `.env.prod`（镜像内可读取）
+            - 仅将敏感项与租户私有项放到 App Service App Settings
+            - 运行时优先级：App Settings > `.env` > `.env.<APP_ENV>`（未设置 `APP_ENV` 时使用 `.env.prod`）
+
     - 如需 Outlook/Graph 与定时发送能力，还需补充（示例）：
-    `az webapp config appsettings set --name $env:APP --resource-group $env:RG --settings GRAPH_BASE_URL=https://graph.microsoft.com/v1.0 DELEGATED_TOKEN_VALIDATE=true`
+    `az webapp config appsettings set --name $env:APP --resource-group $env:RG --settings GRAPH_BASE_URL=https://graph.microsoft.com/v1.0 DELEGATED_TOKEN_LOG_MODE=masked DELEGATED_TOKEN_CACHE_TTL_SECONDS=300`
 
     - 以及 Azure Table 相关：
         ```shell

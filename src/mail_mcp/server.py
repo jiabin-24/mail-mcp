@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import contextvars
 import os
+from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
 from starlette.responses import JSONResponse
@@ -19,7 +20,31 @@ from .utils.oauth_dynamic_provider import DynamicOAuthProvider, get_dynamic_oaut
 from .utils.biz_logger import configure_default_loggers
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
-load_dotenv(override=False)
+_ROOT_DIR = Path(__file__).resolve().parents[2]
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+
+    for key, value in dotenv_values(path).items():
+        if value is None:
+            continue
+        # Keep process-level env vars (for App Service / secret settings) as highest priority.
+        os.environ.setdefault(key, value)
+
+def _bootstrap_env() -> None:
+    app_env = os.getenv("APP_ENV", "").strip().lower()
+    env_files: list[Path] = [_ROOT_DIR / ".env"]
+
+    if app_env:
+        env_files.append(_ROOT_DIR / f".env.{app_env}")
+    else:
+        env_files.append(_ROOT_DIR / ".env.prod")
+
+    for env_file in env_files:
+        _load_env_file(env_file)
+
+_bootstrap_env()
 configure_default_loggers()
 
 CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -58,6 +83,15 @@ APP = FastMCP(
     streamable_http_path=os.getenv("MCP_PATH", "/mcp"),
     auth=_auth_settings,
 )
+
+_AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"
+_EXPOSE_AGENTS_MD = os.getenv("MCP_EXPOSE_AGENTS_MD", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
 register_calendar_tools(APP, CALENDAR_STORE)
 register_email_tools(APP, EMAIL_STORE)
 register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
@@ -73,6 +107,28 @@ def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> lis
 def mailbox_get_user_time_zone() -> dict[str, str]:
     """Get current user's mailbox time zone."""
     return GRAPH_STORE.get_user_time_zone()
+
+
+if _EXPOSE_AGENTS_MD:
+
+    @APP.tool()
+    def mailbox_get_agents_md() -> dict[str, str | bool]:
+        """Read repository AGENTS.md for external MCP clients."""
+        if not _AGENTS_MD_PATH.exists():
+            return {
+                "enabled": True,
+                "found": False,
+                "path": str(_AGENTS_MD_PATH),
+                "content": "",
+            }
+
+        content = _AGENTS_MD_PATH.read_text(encoding="utf-8")
+        return {
+            "enabled": True,
+            "found": True,
+            "path": str(_AGENTS_MD_PATH),
+            "content": content,
+        }
 
 @APP.tool()
 def ping() -> dict[str, str]:

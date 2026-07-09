@@ -18,7 +18,6 @@ TOKEN_LOG_MODE_MASKED = "masked"
 TOKEN_LOG_MODE_FULL = "full"
 TOKEN_LOG_MODE_NONE = "none"
 TOKEN_PREVIEW_LENGTH = 12
-TOKEN_VALIDATION_ENV = "DELEGATED_TOKEN_VALIDATE"
 TOKEN_VALIDATION_CACHE_TTL_ENV = "DELEGATED_TOKEN_CACHE_TTL_SECONDS"
 DEFAULT_VALIDATION_CACHE_TTL_SECONDS = 300
 GRAPH_BASE_URL_ENV = "GRAPH_BASE_URL"
@@ -51,11 +50,6 @@ def _log_token(token: str) -> None:
         AUTH_LOGGER.info("delegated_token=%s", token)
     elif token_log_mode == TOKEN_LOG_MODE_MASKED:
         AUTH_LOGGER.info("delegated_token_preview=%s", _masked_token(token))
-
-
-def _should_validate_token() -> bool:
-    value = os.getenv(TOKEN_VALIDATION_ENV, "true").strip().lower()
-    return value in {"1", "true", "yes", "on"}
 
 
 def _token_cache_ttl_seconds() -> int:
@@ -134,7 +128,7 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
         return await maybe_resolved if inspect.isawaitable(maybe_resolved) else maybe_resolved
 
     def _should_validate_graph_token(self, resolved_token: str | None, token_value: str | None) -> bool:
-        return bool((resolved_token or token_value) and _should_validate_token() and self._token_resolver is None)
+        return bool((resolved_token or token_value) and self._token_resolver is None)
 
     async def _validate_token(self, token: str) -> bool:
         ttl = _token_cache_ttl_seconds()

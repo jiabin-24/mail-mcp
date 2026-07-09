@@ -92,8 +92,36 @@ az acr repository show-tags \
 
 - `GRAPH_BASE_URL`（默认 `https://graph.microsoft.com/v1.0`）
 - `DELEGATED_TOKEN_LOG_MODE`（默认 `masked`，可选 `masked` / `full` / `none`）
-- `DELEGATED_TOKEN_VALIDATE`（默认 `true`，是否校验传入 Bearer token 有效性）
 - `DELEGATED_TOKEN_CACHE_TTL_SECONDS`（默认 `300`，token 校验结果缓存秒数）
+- `MCP_EXPOSE_AGENTS_MD`（默认 `false`，设置为 `true` 后对外暴露 `mailbox_get_agents_md()` 工具，返回仓库根目录 `AGENTS.md` 内容）
+
+### 2.1.1 配置分层（推荐：非敏感入库，敏感留在 App Service）
+
+服务启动时按以下优先级加载配置（高 -> 低）：
+
+1. 进程环境变量（例如 Azure App Service 的 App Settings）
+2. 仓库根目录 `.env`（本地私有，不入库）
+3. 当 `APP_ENV` 已设置时：`.env.<APP_ENV>`；否则：`.env.prod`
+
+说明：
+
+- 项目已支持将 `.env.prod` 提交到 Git（用于非敏感默认值）。
+- 机密信息仍应只放在 App Service App Settings（或 Key Vault），不要写入 `.env.prod`。
+
+建议放入 `.env.prod` 的示例（非敏感）：
+
+- `MCP_HOST` / `MCP_PORT` / `MCP_PATH`
+- `GRAPH_BASE_URL`
+- `DELEGATED_TOKEN_LOG_MODE`
+- `DELEGATED_TOKEN_CACHE_TTL_SECONDS`
+- `MCP_EXPOSE_AGENTS_MD`
+
+建议仅放在 App Service 的示例（敏感/租户强绑定）：
+
+- `AZURE_CLIENT_SECRET`
+- `MCP_OAUTH_CLIENT_SECRET`
+- `OUTLOOK_ACCESS_TOKEN`
+- `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_STORAGE_ACCOUNT_NAME`
 
 Azure Table（定时发送队列）环境变量：
 
@@ -150,7 +178,7 @@ Azure Table 所需 RBAC（Service Principal）：
 鉴权说明：
 
 - `/mcp` 调用必须携带 `Authorization: Bearer <token>`
-- 服务会通过 Graph `GET /me` 校验 token 是否有效，校验失败返回 `401`
+- 在直传 Graph token 模式下，服务会通过 Graph `GET /me` 校验 token 是否有效，校验失败返回 `401`
 - `/` 与 `/healthz` 仍允许匿名访问（用于健康检查）
 
 Token 至少需要这些 Graph 权限之一（按你调用场景）：
@@ -234,6 +262,8 @@ server {
 
 - `ping()`
   - 健康检查
+- `mailbox_get_agents_md()`（仅当 `MCP_EXPOSE_AGENTS_MD=true` 时注册）
+  - 返回仓库根目录 `AGENTS.md` 内容，便于 MCP 客户端读取 Agent 规则
 
 ### 3.2 邮件读取与检索
 
