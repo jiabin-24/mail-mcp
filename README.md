@@ -169,6 +169,13 @@ Azure Table 所需 RBAC（Service Principal）：
 - `/revoke`
 - `/oauth/callback`（与 Entra ID 交互的回调）
 
+OAuth 动态客户端注册持久化（防止重启后 client_id 丢失）：
+
+- 服务会优先将 DCR 注册得到的客户端信息写入 Azure Table，并在 `/authorize` 时回查
+- 仅复用现有 Azure Table 配置：`AZURE_STORAGE_ACCOUNT_NAME` + `AZURE_TENANT_ID` + `AZURE_CLIENT_ID` + `AZURE_CLIENT_SECRET`
+- OAuth 客户端注册信息写入固定表名：`OAuthClientRegistry`
+- 若上述 `AZURE_*` 配置不完整，服务会回退为进程内存模式（重启后 DCR client_id 仍会失效）
+
 说明：
 
 - MCP 访问令牌由本服务签发并校验。

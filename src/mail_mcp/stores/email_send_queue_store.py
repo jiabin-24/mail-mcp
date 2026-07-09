@@ -7,12 +7,11 @@ from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
-from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
-from azure.data.tables import TableClient, TableServiceClient
-from azure.identity import ClientSecretCredential
+from azure.core.exceptions import ResourceNotFoundError
 
 from ..schemas.request_models import MailboxCreateSendJobInput, MailboxUpdateSendJobScheduleInput
 from .graph_store import GraphStoreBase
+from .table_storage import build_table_context_from_env
 
 
 class EmailSendQueueStore(GraphStoreBase):
@@ -20,31 +19,15 @@ class EmailSendQueueStore(GraphStoreBase):
 
     def __init__(self, token_provider: Callable[[], str | None]) -> None:
         super().__init__(token_provider=token_provider)
-        self._account_name = (os.getenv("AZURE_STORAGE_ACCOUNT_NAME") or "").strip()
         self._table_name = (os.getenv("AZURE_STORAGE_TABLE_NAME") or "EmailSendQueue").strip()
-
-        tenant_id = (os.getenv("AZURE_TENANT_ID") or "").strip()
-        client_id = (os.getenv("AZURE_CLIENT_ID") or "").strip()
-        client_secret = (os.getenv("AZURE_CLIENT_SECRET") or "").strip()
         self._graph_base = os.getenv("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0")
 
-        if not self._account_name:
-            raise ValueError("Missing AZURE_STORAGE_ACCOUNT_NAME for Azure Table Storage")
-        if not tenant_id or not client_id or not client_secret:
-            raise ValueError(
-                "Missing Service Principal credentials. Required: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET"
-            )
-
-        account_url = f"https://{self._account_name}.table.core.windows.net"
-        credential = ClientSecretCredential(
-            tenant_id=tenant_id,
-            client_id=client_id,
-            client_secret=client_secret,
-        )
-        self._sp_credential = credential
-        service_client = TableServiceClient(endpoint=account_url, credential=credential)
-        self._table_client: TableClient = service_client.get_table_client(table_name=self._table_name)
-        self._ensure_table_exists()
+        table_context = build_table_context_from_env(self._table_name)
+        if table_context is None:
+            raise ValueError("Azure Table context is unavailable")
+        self._account_name = table_context.account_name
+        self._sp_credential = table_context.credential
+        self._table_client = table_context.table_client
 
     def enqueue_send_job(self, req: MailboxCreateSendJobInput) -> dict[str, Any]:
         user_upn = self.resolve_current_user_upn()
@@ -79,12 +62,6 @@ class EmailSendQueueStore(GraphStoreBase):
                 "userupn": entity["userupn"],
             },
         }
-
-    def _ensure_table_exists(self) -> None:
-        try:
-            self._table_client.create_table()
-        except ResourceExistsError:
-            return
 
     def list_pending_jobs(self, limit: int = 20) -> list[dict[str, Any]]:
         user_upn = self.resolve_current_user_upn()

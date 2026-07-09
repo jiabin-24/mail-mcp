@@ -13,6 +13,7 @@ from .stores.calendar_store import CalendarStore
 from .stores.email_store import EmailStore
 from .stores.email_send_queue_store import EmailSendQueueStore
 from .stores.graph_store import GraphStoreBase
+from .stores.oauth_client_store import build_oauth_client_store_from_env
 from .tools.calendar_tools import register_calendar_tools
 from .tools.email_tools import register_email_tools
 from .tools.email_queue_tools import register_email_queue_tools
@@ -59,7 +60,8 @@ _oauth_provider: DynamicOAuthProvider | None = None
 _auth_settings: AuthSettings | None = None
 _oauth_config = get_dynamic_oauth_config_from_env()
 if _oauth_config:
-    _oauth_provider = DynamicOAuthProvider(**_oauth_config)
+    _oauth_client_store = build_oauth_client_store_from_env()
+    _oauth_provider = DynamicOAuthProvider(**_oauth_config, client_registry=_oauth_client_store)
     issuer_url = _oauth_config["issuer_url"]
     _auth_settings = AuthSettings(
         issuer_url=issuer_url,

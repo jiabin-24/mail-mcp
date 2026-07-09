@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import secrets
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlencode
 
 import httpx
@@ -22,6 +23,16 @@ from mcp.server.auth.provider import (
     construct_redirect_uri,
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+
+LOGGER = logging.getLogger("mail_mcp.oauth")
+
+
+class OAuthClientRegistry(Protocol):
+    def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        ...
+
+    def upsert_client(self, client: OAuthClientInformationFull) -> None:
+        ...
 
 
 @dataclass
@@ -56,6 +67,7 @@ class DynamicOAuthProvider(
         access_token_ttl_seconds: int = 3600,
         refresh_token_ttl_seconds: int = 30 * 24 * 3600,
         state_ttl_seconds: int = 600,
+        client_registry: OAuthClientRegistry | None = None,
     ) -> None:
         self.issuer_url = issuer_url.rstrip("/")
         self.callback_url = callback_url
@@ -67,6 +79,7 @@ class DynamicOAuthProvider(
         self.access_token_ttl_seconds = access_token_ttl_seconds
         self.refresh_token_ttl_seconds = refresh_token_ttl_seconds
         self.state_ttl_seconds = state_ttl_seconds
+        self._client_registry = client_registry
 
         self._clients: dict[str, OAuthClientInformationFull] = {}
         self._pending_auth: dict[str, PendingAuthorization] = {}
@@ -80,11 +93,29 @@ class DynamicOAuthProvider(
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         async with self._lock:
-            return self._clients.get(client_id)
+            cached = self._clients.get(client_id)
+            if cached is not None:
+                return cached
+
+            if self._client_registry is not None:
+                try:
+                    persisted = self._client_registry.get_client(client_id)
+                except Exception as exc:
+                    LOGGER.warning("load oauth client from registry failed: %s", exc)
+                    return None
+                if persisted is not None:
+                    self._clients[client_id] = persisted
+                return persisted
+            return None
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         async with self._lock:
             self._clients[client_info.client_id] = client_info
+            if self._client_registry is not None:
+                try:
+                    self._client_registry.upsert_client(client_info)
+                except Exception as exc:
+                    LOGGER.warning("persist oauth client to registry failed: %s", exc)
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         state_id = secrets.token_urlsafe(24)
