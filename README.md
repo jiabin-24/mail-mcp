@@ -176,6 +176,13 @@ OAuth 动态客户端注册持久化（防止重启后 client_id 丢失）：
 - OAuth 客户端注册信息写入固定表名：`OAuthClientRegistry`
 - 若上述 `AZURE_*` 配置不完整，服务会回退为进程内存模式（重启后 DCR client_id 仍会失效）
 
+OAuth token/state 持久化（防止重启后 token 失效）：
+
+- 服务会将 OAuth 运行态信息写入 Azure Table，包括：pending state、authorization code、MCP access token、MCP refresh token 以及 Graph 委托 token 映射
+- 默认表名：`OAuthTokenRegistry`
+- 可通过 `MCP_OAUTH_TOKEN_TABLE_NAME` 覆盖表名
+- 若 Azure Table 配置不完整，服务回退为进程内存模式（重启后既有 token 会失效，需要重新授权）
+
 说明：
 
 - MCP 访问令牌由本服务签发并校验。

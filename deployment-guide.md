@@ -117,6 +117,7 @@ $env:STORAGE="stmailmcpprod001"       # 全局唯一，小写字母数字
         - AZURE_TENANT_ID
         - AZURE_CLIENT_ID
         - AZURE_CLIENT_SECRET
+        - MCP_OAUTH_TOKEN_TABLE_NAME（可选，默认 OAuthTokenRegistry）
         ```
 
 7. 重启并验证
