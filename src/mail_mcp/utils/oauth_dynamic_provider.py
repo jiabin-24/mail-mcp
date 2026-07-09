@@ -592,7 +592,11 @@ class DynamicOAuthProvider(
         )
         return RedirectResponse(url=redirect_url, status_code=302)
 
-    async def resolve_graph_access_token(self, mcp_access_token: str) -> str | None:
+    async def resolve_graph_access_token(
+        self,
+        mcp_access_token: str,
+        force_refresh: bool = False,
+    ) -> str | None:
         now = int(time.time())
         access, external = await self._load_access_bundle(mcp_access_token)
 
@@ -602,6 +606,23 @@ class DynamicOAuthProvider(
         if access.expires_at is not None and access.expires_at <= now:
             self._delete_access_token_from_registry(mcp_access_token)
             return None
+
+        if force_refresh:
+            LOGGER.info(
+                "force refresh delegated graph token for mcp_access_token_fp=%s",
+                _token_fingerprint(mcp_access_token),
+            )
+            refreshed = await self._refresh_external_graph_token(external)
+            async with self._lock:
+                if mcp_access_token in self._access_external_tokens:
+                    self._access_external_tokens[mcp_access_token] = refreshed
+
+            self._persist_access_token_bundle(
+                token=mcp_access_token,
+                access=access,
+                external=refreshed,
+            )
+            return refreshed.graph_access_token
 
         if external.graph_expires_at is not None and external.graph_expires_at <= now:
             # 外部 Graph token 过期时尝试刷新，并把最新映射回写持久层。
@@ -816,6 +837,9 @@ class DynamicOAuthProvider(
         if not external.graph_refresh_token:
             raise TokenError("invalid_grant", "delegated refresh token is unavailable")
 
+        refresh_fp = _token_fingerprint(external.graph_refresh_token)
+        LOGGER.info("delegated graph token refresh started refresh_token_fp=%s", refresh_fp)
+
         token_endpoint = f"https://login.microsoftonline.com/{self.tenant_id}/oauth2/v2.0/token"
         data = {
             "grant_type": "refresh_token",
@@ -829,6 +853,11 @@ class DynamicOAuthProvider(
             response = await client.post(token_endpoint, data=data)
 
         if response.status_code >= 400:
+            LOGGER.warning(
+                "delegated graph token refresh failed status=%s refresh_token_fp=%s",
+                response.status_code,
+                refresh_fp,
+            )
             raise TokenError("invalid_grant", "delegated refresh token exchange failed")
 
         payload = response.json()
@@ -839,6 +868,13 @@ class DynamicOAuthProvider(
         graph_refresh_token = str(payload.get("refresh_token", "") or "").strip() or external.graph_refresh_token
         expires_in = payload.get("expires_in")
         graph_expires_at = int(time.time()) + int(expires_in) if isinstance(expires_in, int) else None
+
+        LOGGER.info(
+            "delegated graph token refresh succeeded refresh_token_fp=%s rotated=%s expires_in=%s",
+            refresh_fp,
+            bool(payload.get("refresh_token")),
+            expires_in,
+        )
 
         return ExternalTokenBundle(
             graph_access_token=graph_access_token,
@@ -915,3 +951,11 @@ def _external_bundle_from_payload(payload: dict[str, Any]) -> ExternalTokenBundl
         return ExternalTokenBundle(**cleaned)
     except Exception:
         return None
+
+
+def _token_fingerprint(token: str | None) -> str:
+    import hashlib
+
+    if not token:
+        return "none"
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
