@@ -103,12 +103,14 @@ last_updated: 2026-07-06
 链接输出规则（统一）：
 
 * 优先复用工具返回的 `webLink` / `fileUrl`，保证链接有效。
+* 为保证收件侧可点击，邮件草稿与会议正文默认使用 `HTML` 内容类型写入；除非用户或工具明确要求 `Text`。
 * 正文为 `HTML` 时：
 	草稿链接使用 `<a href="{webLink}" data-draft-id="{draft_id}" target="_blank" rel="noopener noreferrer">{subject}</a>`；
 	会议链接使用 `<a href="{eventWebLink}" data-event-id="{event_id}" target="_blank" rel="noopener noreferrer">{eventSubject}</a>`；
 	附件链接使用 `<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`。
 * 正文为 `Text` 或类型未知时：
-	附件信息使用固定格式：`附件：` 下一行 `{fileName}，链接：{fileUrl}`；若有多个附件，每个附件各占一行；
+	附件信息使用固定格式：`附件：{fileName}` 下一行仅输出 URL：`{fileUrl}`；若有多个附件，每个附件使用两行（名称一行、URL 一行）；
+	URL 行必须是独立一行且仅包含 `http://` 或 `https://` 链接，且需是邮件识别的超链接格式，不得在同一行追加任何中文、标点或说明文字（如 `，链接：`）；
 	URL 必须保持纯文本，不得包裹在括号、Markdown 链接语法或其他符号中（如 `({fileUrl})`、`[xxx]({fileUrl})`）；
 	禁止输出原始 HTML 标签文本（如 `<a href=...>`）。
 
