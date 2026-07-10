@@ -23,6 +23,7 @@ class AzureTableOAuthTokenStore:
     _REFRESH_TOKEN_INDEX_PARTITION = "refresh_token_index"
     _REFRESH_TOKEN_PARTITION = "refresh_token"
     _CLEANUP_MIN_INTERVAL_SECONDS = 3600
+    _STARTUP_CLEANUP_EXPIRED_AGE_SECONDS = 180 * 24 * 3600
 
     def __init__(self, context: AzureTableContext) -> None:
         self._kv = AzureTableJsonKV(context.table_client)
@@ -321,6 +322,58 @@ class AzureTableOAuthTokenStore:
             "access_token_deleted": access_deleted,
             "refresh_token_deleted": refresh_deleted,
             "limit_per_type": safe_limit,
+        }
+
+    def cleanup_oauth_artifacts_expired_before(self, *, cutoff_epoch: int, limit: int = 100) -> dict[str, int]:
+        """Batch delete oauth artifacts expired before cutoff_epoch.
+
+        This is intended for startup compaction of very old expired records.
+        It deletes by expiresepoch across all partitions.
+        """
+        safe_limit = max(1, min(int(limit), 100))
+        safe_cutoff = int(cutoff_epoch)
+
+        deleted = self._kv.delete_expired_entities_global(
+            now_epoch=safe_cutoff,
+            limit=safe_limit,
+        )
+
+        return {
+            "deleted": deleted,
+            "limit_per_type": safe_limit,
+            "cutoff_epoch": safe_cutoff,
+        }
+
+    def cleanup_oauth_artifacts_expired_before_until_clean(
+        self,
+        *,
+        cutoff_epoch: int,
+        limit: int = 100,
+        max_rounds: int = 100,
+    ) -> dict[str, int]:
+        """Repeat stale cleanup in batches until no rows remain or max rounds reached."""
+        safe_limit = max(1, min(int(limit), 100))
+        safe_rounds = max(1, int(max_rounds))
+        safe_cutoff = int(cutoff_epoch)
+
+        total_deleted = 0
+        rounds = 0
+        for _ in range(safe_rounds):
+            rounds += 1
+            result = self.cleanup_oauth_artifacts_expired_before(
+                cutoff_epoch=safe_cutoff,
+                limit=safe_limit,
+            )
+            deleted = int(result.get("deleted", 0))
+            total_deleted += deleted
+            if deleted < safe_limit:
+                break
+
+        return {
+            "deleted": total_deleted,
+            "rounds": rounds,
+            "limit_per_round": safe_limit,
+            "cutoff_epoch": safe_cutoff,
         }
 
     def _schedule_async_cleanup(self, *, limit: int = 100) -> None:

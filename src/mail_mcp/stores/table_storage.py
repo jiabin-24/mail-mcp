@@ -136,6 +136,34 @@ class AzureTableJsonKV:
                 deleted += 1
         return deleted
 
+    def delete_expired_entities_global(
+        self,
+        *,
+        now_epoch: int,
+        expires_field: str = "expiresepoch",
+        limit: int = 200,
+    ) -> int:
+        """Delete expired entities across all partitions.
+
+        Returns number of deleted rows. This is best-effort cleanup and ignores
+        concurrent delete races.
+        """
+        safe_limit = max(1, min(int(limit), 1000))
+        filter_expr = f"{expires_field} ge 0 and {expires_field} le {int(now_epoch)}"
+
+        deleted = 0
+        entities = self._table_client.query_entities(query_filter=filter_expr, results_per_page=safe_limit)
+        for entity in entities:
+            if deleted >= safe_limit:
+                break
+            keys = self._entity_keys(entity)
+            if keys is None:
+                continue
+            pk, rk = keys
+            if self._delete_entity_if_exists(partition_key=pk, row_key=rk):
+                deleted += 1
+        return deleted
+
     def _build_expired_filter(
         self,
         *,

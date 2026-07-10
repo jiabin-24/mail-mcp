@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextvars
 import os
+import threading
+import time
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -82,6 +84,32 @@ if _oauth_config:
         required_scopes=[MCP_SCOPE],
         service_documentation_url=(os.getenv("MCP_OAUTH_SERVICE_DOCUMENTATION_URL") or issuer_url),
     )
+
+
+def _run_startup_token_cleanup_once() -> None:
+    if _oauth_token_store is None:
+        return
+    try:
+        cutoff_epoch = int(time.time()) - _oauth_token_store._STARTUP_CLEANUP_EXPIRED_AGE_SECONDS
+        _oauth_token_store.cleanup_oauth_artifacts_expired_before_until_clean(
+            cutoff_epoch=cutoff_epoch,
+            limit=100,
+        )
+    except Exception:
+        # 启动清理失败不影响主服务可用性。
+        return
+
+
+def _schedule_startup_token_cleanup_once() -> None:
+    worker = threading.Thread(
+        target=_run_startup_token_cleanup_once,
+        daemon=True,
+        name="oauth-token-startup-cleanup",
+    )
+    worker.start()
+
+
+_schedule_startup_token_cleanup_once()
 
 APP = FastMCP(
     "mail-assistant",
