@@ -5,6 +5,7 @@ import json
 import os
 import time
 import base64
+import threading
 from typing import Any
 
 from .table_storage import AzureTableContext, AzureTableJsonKV, build_table_context_from_env
@@ -21,9 +22,16 @@ class AzureTableOAuthTokenStore:
     # refresh token 的二级索引：token(rowkey) -> 实际分区
     _REFRESH_TOKEN_INDEX_PARTITION = "refresh_token_index"
     _REFRESH_TOKEN_PARTITION = "refresh_token"
+    _CLEANUP_MIN_INTERVAL_SECONDS = 3600
 
     def __init__(self, context: AzureTableContext) -> None:
         self._kv = AzureTableJsonKV(context.table_client)
+        # 清理任务后台串行执行，避免并发触发造成重复扫描。
+        self._cleanup_lock = threading.Lock()
+        self._cleanup_running = False
+        # 固定窗口节流：默认 1 小时内最多触发一次清理。
+        self._cleanup_window_seconds = self._CLEANUP_MIN_INTERVAL_SECONDS
+        self._last_cleanup_started_at = 0.0
 
     def upsert_pending_auth(self, state_id: str, payload: dict[str, Any], expires_at: float) -> None:
         self._upsert_entity(
@@ -133,6 +141,8 @@ class AzureTableOAuthTokenStore:
             payload_field="payloadjson",
             expires_epoch=expires_at,
         )
+        # 每次 access token 生成/更新后，异步触发一次批量过期清理（按需、非阻塞）。
+        self._schedule_async_cleanup(limit=100)
 
     def get_access_token(
         self,
@@ -287,6 +297,91 @@ class AzureTableOAuthTokenStore:
 
         value = str(index_payload.get("partitionkey", "") or "").strip()
         return value or None
+
+    def cleanup_expired_access_and_refresh_tokens(self, *, limit: int = 100) -> dict[str, int]:
+        """On-demand cleanup for expired access/refresh tokens.
+
+        Each token type is cleaned in a bounded batch (max 100 per run by default).
+        """
+        safe_limit = max(1, min(int(limit), 100))
+        now_epoch = int(time.time())
+
+        access_deleted = self._cleanup_expired_from_index_partition(
+            index_partition=self._ACCESS_TOKEN_INDEX_PARTITION,
+            now_epoch=now_epoch,
+            limit=safe_limit,
+        )
+        refresh_deleted = self._cleanup_expired_from_index_partition(
+            index_partition=self._REFRESH_TOKEN_INDEX_PARTITION,
+            now_epoch=now_epoch,
+            limit=safe_limit,
+        )
+
+        return {
+            "access_token_deleted": access_deleted,
+            "refresh_token_deleted": refresh_deleted,
+            "limit_per_type": safe_limit,
+        }
+
+    def _schedule_async_cleanup(self, *, limit: int = 100) -> None:
+        with self._cleanup_lock:
+            now = time.time()
+            if self._cleanup_running:
+                return
+            if (
+                self._cleanup_window_seconds > 0
+                and self._last_cleanup_started_at > 0
+                and (now - self._last_cleanup_started_at) < self._cleanup_window_seconds
+            ):
+                return
+            self._cleanup_running = True
+            self._last_cleanup_started_at = now
+
+        worker = threading.Thread(
+            target=self._run_cleanup_worker,
+            kwargs={"limit": limit},
+            daemon=True,
+            name="oauth-token-cleanup",
+        )
+        worker.start()
+
+    def _run_cleanup_worker(self, *, limit: int) -> None:
+        try:
+            self.cleanup_expired_access_and_refresh_tokens(limit=limit)
+        finally:
+            with self._cleanup_lock:
+                self._cleanup_running = False
+
+    def _cleanup_expired_from_index_partition(
+        self,
+        *,
+        index_partition: str,
+        now_epoch: int,
+        limit: int,
+    ) -> int:
+        safe_partition = index_partition.replace("'", "''")
+        filter_expr = (
+            f"PartitionKey eq '{safe_partition}' "
+            f"and expiresepoch ge 0 "
+            f"and expiresepoch le {int(now_epoch)}"
+        )
+        expired_index_rows = self._kv.query_entities(query_filter=filter_expr, limit=limit)
+
+        deleted = 0
+        for index_entity in expired_index_rows:
+            row_key = str(index_entity.get("RowKey", "") or "").strip()
+            if not row_key:
+                continue
+
+            index_payload = _entity_payload(index_entity) or {}
+            target_partition = str(index_payload.get("partitionkey", "") or "").strip()
+            if target_partition:
+                self._kv.delete(partition_key=target_partition, row_key=row_key)
+
+            self._kv.delete(partition_key=index_partition, row_key=row_key)
+            deleted += 1
+
+        return deleted
 
     def _upsert_entity(
         self,

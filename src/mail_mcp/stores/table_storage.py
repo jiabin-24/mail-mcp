@@ -90,6 +90,17 @@ class AzureTableJsonKV:
         except ResourceNotFoundError:
             return
 
+    def query_entities(self, *, query_filter: str, limit: int = 100) -> list[dict[str, Any]]:
+        """Query entities with a bounded result size."""
+        safe_limit = max(1, min(int(limit), 1000))
+        items: list[dict[str, Any]] = []
+        entities = self._table_client.query_entities(query_filter=query_filter, results_per_page=safe_limit)
+        for entity in entities:
+            items.append(dict(entity))
+            if len(items) >= safe_limit:
+                break
+        return items
+
     def delete_expired_entities(
         self,
         *,
