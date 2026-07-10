@@ -17,6 +17,13 @@ class GraphRecipient(BaseModel):
     emailAddress: GraphEmailAddress = Field(default_factory=GraphEmailAddress)
 
 
+class GraphResponseStatus(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    response: str = ""
+    time: str = ""
+
+
 class GraphMessageBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -61,6 +68,7 @@ class GraphCalendarEvent(BaseModel):
     bodyPreview: str = ""
     organizer: GraphRecipient = Field(default_factory=GraphRecipient)
     attendees: list[GraphRecipient] = Field(default_factory=list)
+    responseStatus: GraphResponseStatus = Field(default_factory=GraphResponseStatus)
     location: GraphEventLocation = Field(default_factory=GraphEventLocation)
     isAllDay: bool = False
     start: GraphEventDateTime = Field(default_factory=GraphEventDateTime)
@@ -118,6 +126,10 @@ def map_graph_calendar_event(event: dict[str, Any]) -> dict[str, Any]:
         "bodyPreview": parsed.bodyPreview or "",
         "organizer": recipient_address(parsed.organizer),
         "attendees": recipient_addresses(parsed.attendees),
+        "responseStatus": {
+            "response": parsed.responseStatus.response or "",
+            "time": parsed.responseStatus.time or "",
+        },
         "location": parsed.location.displayName or "",
         "isAllDay": bool(parsed.isAllDay),
         "start": {

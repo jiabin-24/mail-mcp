@@ -28,7 +28,7 @@ class CalendarStore(GraphStoreBase):
         payload = self._request(
             "GET",
             f"{self._event_path(req.event_id, req.calendar_id)}"
-            "?$select=id,subject,bodyPreview,organizer,attendees,start,end,location,isAllDay,webLink",
+            "?$select=id,subject,bodyPreview,organizer,attendees,responseStatus,start,end,location,isAllDay,webLink",
         )
         return map_graph_calendar_event(payload)
 
@@ -159,7 +159,7 @@ class CalendarStore(GraphStoreBase):
         start_value = req.start or ""
         end_value = req.end or ""
 
-        select_clause = "id,subject,bodyPreview,organizer,attendees,start,end,location,isAllDay,webLink"
+        select_clause = "id,subject,bodyPreview,organizer,attendees,responseStatus,start,end,location,isAllDay,webLink"
         params: list[str] = [f"$top={size}", "$orderby=start/dateTime", f"$select={select_clause}"]
 
         if search_value:
