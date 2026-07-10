@@ -26,14 +26,15 @@ class EmailStore(GraphStoreBase):
     def list_folders(self) -> list[str]:
         payload = self._request(
             "GET",
-            f"{self._mailbox_prefix}/mailFolders?$select=id,displayName,wellKnownName",
+            # wellKnownName is not available on mailFolder in Graph v1.0.
+            f"{self._mailbox_prefix}/mailFolders?$select=id,displayName",
         )
         folders = payload.get("value", [])
         names: list[str] = []
         for folder in folders:
-            well_known = (folder.get("wellKnownName") or "").strip().lower()
             display_name = (folder.get("displayName") or "").strip()
-            names.append(well_known or display_name)
+            folder_id = (folder.get("id") or "").strip()
+            names.append(display_name or folder_id)
         return [name for name in names if name]
 
     def list_messages(self, req: MailboxListMessagesInput) -> list[dict[str, Any]]:
@@ -61,6 +62,7 @@ class EmailStore(GraphStoreBase):
         )
         search_value = (req.search or "").strip()
         filter_value = (req.filter or "").strip()
+        orderby_value = (req.orderby or "").strip()
         if not search_value and not filter_value:
             return []
 
@@ -71,7 +73,10 @@ class EmailStore(GraphStoreBase):
         if search_value:
             encoded_search = quote(search_value, safe=GRAPH_QUERY_SAFE)
             params.append(f"$search={encoded_search}")
-        if not search_value:
+        if orderby_value:
+            encoded_orderby = quote(orderby_value, safe=GRAPH_QUERY_SAFE)
+            params.append(f"$orderby={encoded_orderby}")
+        elif not search_value:
             params.append("$orderby=receivedDateTime desc")
 
         headers = {"ConsistencyLevel": "eventual"} if search_value else None

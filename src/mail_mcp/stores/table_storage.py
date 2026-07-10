@@ -90,6 +90,85 @@ class AzureTableJsonKV:
         except ResourceNotFoundError:
             return
 
+    def delete_expired_entities(
+        self,
+        *,
+        partition_key: str,
+        now_epoch: int,
+        expires_field: str = "expiresepoch",
+        equals_filters: dict[str, str] | None = None,
+        limit: int = 200,
+    ) -> int:
+        """Delete expired entities in one partition.
+
+        Returns number of deleted rows. This is best-effort cleanup and ignores
+        concurrent delete races.
+        """
+        safe_limit = max(1, min(int(limit), 1000))
+        filter_expr = self._build_expired_filter(
+            partition_key=partition_key,
+            now_epoch=int(now_epoch),
+            expires_field=expires_field,
+            equals_filters=equals_filters,
+        )
+
+        deleted = 0
+        entities = self._table_client.query_entities(query_filter=filter_expr, results_per_page=safe_limit)
+        for entity in entities:
+            if deleted >= safe_limit:
+                break
+            keys = self._entity_keys(entity)
+            if keys is None:
+                continue
+            pk, rk = keys
+            if self._delete_entity_if_exists(partition_key=pk, row_key=rk):
+                deleted += 1
+        return deleted
+
+    def _build_expired_filter(
+        self,
+        *,
+        partition_key: str,
+        now_epoch: int,
+        expires_field: str,
+        equals_filters: dict[str, str] | None,
+    ) -> str:
+        safe_partition = partition_key.replace("'", "''")
+        filter_expr = (
+            f"PartitionKey eq '{safe_partition}' "
+            f"and {expires_field} ge 0 "
+            f"and {expires_field} le {now_epoch}"
+        )
+        if not equals_filters:
+            return filter_expr
+
+        extra_parts: list[str] = []
+        for field, value in equals_filters.items():
+            field_name = str(field or "").strip()
+            if not field_name:
+                continue
+            escaped = str(value or "").replace("'", "''")
+            extra_parts.append(f"{field_name} eq '{escaped}'")
+
+        if extra_parts:
+            filter_expr += " and " + " and ".join(extra_parts)
+        return filter_expr
+
+    def _entity_keys(self, entity: dict[str, Any]) -> tuple[str, str] | None:
+        pk = str(entity.get("PartitionKey", "") or "")
+        rk = str(entity.get("RowKey", "") or "")
+        if not pk or not rk:
+            return None
+        return pk, rk
+
+    def _delete_entity_if_exists(self, *, partition_key: str, row_key: str) -> bool:
+        try:
+            self._table_client.delete_entity(partition_key=partition_key, row_key=row_key)
+            return True
+        except ResourceNotFoundError:
+            # Entity may already be removed by another instance.
+            return False
+
 
 def build_table_context_from_env(table_name: str, *, optional: bool = False) -> AzureTableContext | None:
     """Build Azure Table client context from AZURE_* environment variables."""

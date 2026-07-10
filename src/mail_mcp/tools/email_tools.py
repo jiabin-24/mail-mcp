@@ -41,6 +41,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
     def mailbox_search(
         search: str | None = None,
         filter: str | None = None,
+        orderby: str | None = None,
         folder: str = "inbox",
         limit: int = 20,
     ) -> list[dict]:
@@ -50,6 +51,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
             {
                 "search": search,
                 "filter": filter,
+                "orderby": orderby,
                 "folder": folder,
                 "limit": limit,
             },

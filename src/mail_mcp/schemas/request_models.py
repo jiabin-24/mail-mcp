@@ -24,6 +24,7 @@ class MailboxSearchInput(BaseModel):
 
     search: str | None = None
     filter: str | None = None
+    orderby: str | None = None
     folder: str = "inbox"
     limit: int = Field(default=20, ge=1, le=100)
 
