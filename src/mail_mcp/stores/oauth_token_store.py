@@ -18,6 +18,8 @@ class AzureTableOAuthTokenStore:
     _ACCESS_TOKEN_PARTITION = "access_token"
     # token -> 实际分区 的二级索引（保持按 token 查找接口不变）
     _ACCESS_TOKEN_INDEX_PARTITION = "access_token_index"
+    # refresh token 的二级索引：token(rowkey) -> 实际分区
+    _REFRESH_TOKEN_INDEX_PARTITION = "refresh_token_index"
     _REFRESH_TOKEN_PARTITION = "refresh_token"
 
     def __init__(self, context: AzureTableContext) -> None:
@@ -102,15 +104,16 @@ class AzureTableOAuthTokenStore:
     ) -> None:
         # access token 主存储按 client + account 分区，避免全分区扫描。
         client_id = str(payload.get("client_id", "") or "").strip()
+        client_key = _hash_text(client_id)
         account_key = _derive_account_key(external_payload)
         row_key = _token_row_key(token)
-        scoped_partition = _access_token_partition(client_id, account_key)
+        scoped_partition = _access_token_partition(client_key, account_key)
         stored_payload = dict(payload)
         # 表内不落明文 token，只存 sha 行键。
         stored_payload["token"] = row_key
 
         # 仅清理同 client/account 下过期数据，避免误删其他账号。
-        self.cleanup_expired_access_tokens(client_id=client_id, account_key=account_key)
+        self.cleanup_expired_access_tokens(client_key=client_key, account_key=account_key)
         self._upsert_entity(
             partition_key=scoped_partition,
             row_key=row_key,
@@ -118,7 +121,7 @@ class AzureTableOAuthTokenStore:
             external_payload=external_payload,
             expires_at=float(expires_at) if expires_at is not None else None,
             extra_fields={
-                "clientid": client_id,
+                "clientid": client_key,
                 "accountkey": account_key,
             },
         )
@@ -168,14 +171,14 @@ class AzureTableOAuthTokenStore:
     def cleanup_expired_access_tokens(
         self,
         *,
-        client_id: str,
+        client_key: str,
         account_key: str,
         limit: int = 200,
     ) -> int:
-        if not client_id or not account_key:
+        if not client_key or not account_key:
             return 0
         return self._kv.delete_expired_entities(
-            partition_key=_access_token_partition(client_id, account_key),
+            partition_key=_access_token_partition(client_key, account_key),
             now_epoch=int(time.time()),
             limit=limit,
         )
@@ -202,27 +205,54 @@ class AzureTableOAuthTokenStore:
         external_payload: dict[str, Any] | None,
         expires_at: int | None,
     ) -> None:
-        # Keep refresh-token partition compact as well.
+        # refresh token 与 access token 一样按 client/account 分区。
+        client_id = str(payload.get("client_id", "") or "").strip()
+        client_key = _hash_text(client_id)
+        account_key = _derive_account_key(external_payload)
+        row_key = _token_row_key(token)
+        scoped_partition = _refresh_token_partition(client_key, account_key)
+        stored_payload = dict(payload)
+        # 表内不落明文 token，只存 sha 行键。
+        stored_payload["token"] = row_key
+
+        # 仅清理同 client/account 下过期 refresh token。
         self._kv.delete_expired_entities(
-            partition_key=self._REFRESH_TOKEN_PARTITION,
+            partition_key=scoped_partition,
             now_epoch=int(time.time()),
             limit=200,
         )
         self._upsert_entity(
-            partition_key=self._REFRESH_TOKEN_PARTITION,
-            row_key=_token_row_key(token),
-            payload=payload,
+            partition_key=scoped_partition,
+            row_key=row_key,
+            payload=stored_payload,
             external_payload=external_payload,
             expires_at=float(expires_at) if expires_at is not None else None,
+            extra_fields={
+                "clientid": client_key,
+                "accountkey": account_key,
+            },
+        )
+        # 写入 refresh token 索引：读取/删除时按 token 反查分区。
+        self._kv.set_json(
+            partition_key=self._REFRESH_TOKEN_INDEX_PARTITION,
+            row_key=row_key,
+            payload={"partitionkey": scoped_partition},
+            payload_field="payloadjson",
+            expires_epoch=expires_at,
         )
 
     def get_refresh_token(
         self,
         token: str,
     ) -> tuple[dict[str, Any], dict[str, Any] | None] | None:
+        row_key = _token_row_key(token)
+        scoped_partition = self._resolve_refresh_partition_by_token_rowkey(row_key)
+        if not scoped_partition:
+            return None
+
         entity = self._kv.get_valid_entity(
-            partition_key=self._REFRESH_TOKEN_PARTITION,
-            row_key=_token_row_key(token),
+            partition_key=scoped_partition,
+            row_key=row_key,
         )
         if entity is None:
             return None
@@ -231,10 +261,32 @@ class AzureTableOAuthTokenStore:
         external_payload = _entity_external_payload(entity)
         if payload is None:
             return None
+        payload = dict(payload)
+        # 内存态恢复明文 token，兼容上层模型校验逻辑。
+        payload["token"] = token
         return payload, external_payload
 
     def delete_refresh_token(self, token: str) -> None:
-        self._kv.delete(partition_key=self._REFRESH_TOKEN_PARTITION, row_key=_token_row_key(token))
+        row_key = _token_row_key(token)
+        scoped_partition = self._resolve_refresh_partition_by_token_rowkey(row_key)
+        if scoped_partition:
+            self._kv.delete(partition_key=scoped_partition, row_key=row_key)
+        self._kv.delete(partition_key=self._REFRESH_TOKEN_INDEX_PARTITION, row_key=row_key)
+
+    def _resolve_refresh_partition_by_token_rowkey(self, row_key: str) -> str | None:
+        index_entity = self._kv.get_valid_entity(
+            partition_key=self._REFRESH_TOKEN_INDEX_PARTITION,
+            row_key=row_key,
+        )
+        if index_entity is None:
+            return None
+
+        index_payload = _entity_payload(index_entity)
+        if not index_payload:
+            return None
+
+        value = str(index_payload.get("partitionkey", "") or "").strip()
+        return value or None
 
     def _upsert_entity(
         self,
@@ -312,11 +364,24 @@ def _token_row_key(token: str) -> str:
     return f"sha256:{digest}"
 
 
-def _access_token_partition(client_id: str, account_key: str) -> str:
-    # 分区键设计：access_token|clientid|accountkey
-    normalized_client_id = str(client_id or "").strip() or "unknown_client"
+def _access_token_partition(client_key: str, account_key: str) -> str:
+    # 分区键设计：access_token|clientkey|accountkey（均为哈希值）
+    normalized_client_id = str(client_key or "").strip() or "unknown_client"
     normalized_account_key = str(account_key or "").strip() or "unknown_account"
     return f"access_token|{normalized_client_id}|{normalized_account_key}"
+
+
+def _refresh_token_partition(client_key: str, account_key: str) -> str:
+    normalized_client_id = str(client_key or "").strip() or "unknown_client"
+    normalized_account_key = str(account_key or "").strip() or "unknown_account"
+    return f"refresh_token|{normalized_client_id}|{normalized_account_key}"
+
+
+def _hash_text(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _derive_account_key(external_payload: dict[str, Any] | None) -> str:
