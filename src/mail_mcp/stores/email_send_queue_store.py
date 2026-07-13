@@ -10,6 +10,7 @@ import httpx
 from azure.core.exceptions import ResourceNotFoundError
 
 from ..schemas.request_models import MailboxCreateSendJobInput, MailboxUpdateSendJobScheduleInput
+from ..utils.datetime_utils import to_utc_iso_from_datetime
 from .graph_store import GraphStoreBase
 from .table_storage import build_table_context_from_env
 
@@ -32,17 +33,25 @@ class EmailSendQueueStore(GraphStoreBase):
     def enqueue_send_job(self, req: MailboxCreateSendJobInput) -> dict[str, Any]:
         user_upn = self.resolve_current_user_upn()
         row_key = uuid4().hex
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
 
         entity: dict[str, Any] = {
             "PartitionKey": user_upn,
             "RowKey": row_key,
             "draftemailid": req.draft_email_id,
-            "schedulesendtime": _to_utc_iso(req.schedule_send_time, require_tz=True),
+            "schedulesendtime": to_utc_iso_from_datetime(
+                req.schedule_send_time,
+                mailbox_time_zone=mailbox_time_zone,
+            ),
             "status": req.status,
-            "senttime": _to_utc_iso(req.sent_time) if req.sent_time else "",
+            "senttime": (
+                to_utc_iso_from_datetime(req.sent_time, mailbox_time_zone=mailbox_time_zone)
+                if req.sent_time
+                else ""
+            ),
             "subject": req.subject or "",
             "userupn": user_upn,
-            "createdtime": _to_utc_iso(datetime.now(tz=UTC)),
+            "createdtime": to_utc_iso_from_datetime(datetime.now(tz=UTC)),
         }
 
         self._table_client.create_entity(entity=entity)
@@ -97,6 +106,7 @@ class EmailSendQueueStore(GraphStoreBase):
     def update_job_schedule(self, req: MailboxUpdateSendJobScheduleInput) -> dict[str, Any]:
         user_upn = self.resolve_current_user_upn()
         job = self.get_job(req.job_id)
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
 
         status = str(job.get("status", "") or "").strip().lower()
         if status != "scheduled":
@@ -106,11 +116,14 @@ class EmailSendQueueStore(GraphStoreBase):
             entity={
                 "PartitionKey": user_upn,
                 "RowKey": req.job_id,
-                "schedulesendtime": _to_utc_iso(req.schedule_send_time, require_tz=True),
+                "schedulesendtime": to_utc_iso_from_datetime(
+                    req.schedule_send_time,
+                    mailbox_time_zone=mailbox_time_zone,
+                ),
                 "status": "scheduled",
                 "senttime": "",
                 "lasterror": "",
-                "updatedtime": _to_utc_iso(datetime.now(tz=UTC)),
+                "updatedtime": to_utc_iso_from_datetime(datetime.now(tz=UTC)),
             },
             mode="merge",
         )
@@ -140,7 +153,7 @@ class EmailSendQueueStore(GraphStoreBase):
         sent: list[dict[str, str]] = []
         failed: list[dict[str, str]] = []
         skipped_not_due: list[dict[str, str]] = []
-        sent_time_utc = _to_utc_iso(datetime.now(tz=UTC))
+        sent_time_utc = to_utc_iso_from_datetime(datetime.now(tz=UTC))
 
         for entity in entities:
             partition_key = str(entity.get("PartitionKey", "") or "")
@@ -230,19 +243,9 @@ class EmailSendQueueStore(GraphStoreBase):
             "status": status,
             "senttime": sent_time,
             "lasterror": last_error,
-            "updatedtime": _to_utc_iso(datetime.now(tz=UTC)),
+            "updatedtime": to_utc_iso_from_datetime(datetime.now(tz=UTC)),
         }
         self._table_client.update_entity(entity=entity, mode="merge")
-
-
-def _to_utc_iso(value: datetime, require_tz: bool = False) -> str:
-    if value.tzinfo is None:
-        if require_tz:
-            raise ValueError("schedule_send_time must include timezone offset (e.g. Z or +08:00)")
-        else:
-            value = value.replace(tzinfo=UTC)
-    utc_value = value.astimezone(UTC)
-    return utc_value.isoformat().replace("+00:00", "Z")
 
 
 def _parse_utc_time(value: str) -> datetime | None:

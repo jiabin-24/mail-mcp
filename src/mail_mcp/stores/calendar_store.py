@@ -15,6 +15,7 @@ from ..schemas.request_models import (
     CalendarRespondInvitationInput,
     CalendarUpdateEventInput,
 )
+from ..utils.datetime_utils import to_utc_iso_from_text
 
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -34,11 +35,21 @@ class CalendarStore(GraphStoreBase):
         return map_graph_calendar_event(payload, mailbox_time_zone=mailbox_time_zone)
 
     def create_calendar_event(self, req: CalendarCreateEventInput) -> dict[str, Any]:
-        event_time_zone = self._resolve_event_time_zone(req.time_zone)
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
+        start_utc = to_utc_iso_from_text(
+            req.start,
+            preferred_time_zone=req.time_zone,
+            mailbox_time_zone=mailbox_time_zone,
+        )
+        end_utc = to_utc_iso_from_text(
+            req.end,
+            preferred_time_zone=req.time_zone,
+            mailbox_time_zone=mailbox_time_zone,
+        )
         payload: dict[str, Any] = {
             "subject": req.subject,
-            "start": {"dateTime": req.start, "timeZone": event_time_zone},
-            "end": {"dateTime": req.end, "timeZone": event_time_zone},
+            "start": {"dateTime": start_utc, "timeZone": "UTC"},
+            "end": {"dateTime": end_utc, "timeZone": "UTC"},
             "isAllDay": bool(req.is_all_day),
             "isOnlineMeeting": True,
             "onlineMeetingProvider": "teamsForBusiness",
@@ -72,15 +83,25 @@ class CalendarStore(GraphStoreBase):
     def update_calendar_event(self, req: CalendarUpdateEventInput) -> dict[str, Any] | None:
         start_value = req.start
         end_value = req.end
-        event_time_zone = self._resolve_event_time_zone(req.time_zone)
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
         current_event: dict[str, Any] | None = None
 
         patch_payload: dict[str, Any] = {}
         if req.subject is not None:
             patch_payload["subject"] = req.subject
         if start_value and end_value:
-            patch_payload["start"] = {"dateTime": start_value, "timeZone": event_time_zone}
-            patch_payload["end"] = {"dateTime": end_value, "timeZone": event_time_zone}
+            start_utc = to_utc_iso_from_text(
+                start_value,
+                preferred_time_zone=req.time_zone,
+                mailbox_time_zone=mailbox_time_zone,
+            )
+            end_utc = to_utc_iso_from_text(
+                end_value,
+                preferred_time_zone=req.time_zone,
+                mailbox_time_zone=mailbox_time_zone,
+            )
+            patch_payload["start"] = {"dateTime": start_utc, "timeZone": "UTC"}
+            patch_payload["end"] = {"dateTime": end_utc, "timeZone": "UTC"}
         if req.attendees is not None:
             patch_payload["attendees"] = self._emails_to_attendees(req.attendees)
         if req.description is not None:
@@ -219,12 +240,6 @@ class CalendarStore(GraphStoreBase):
         if calendar_id_value:
             return f"{self._mailbox_prefix}/calendars/{calendar_id_value}/events/{event_id}"
         return f"{self._mailbox_prefix}/events/{event_id}"
-
-    def _resolve_event_time_zone(self, time_zone: str | None) -> str:
-        if time_zone and time_zone.strip():
-            return time_zone.strip()
-
-        return self.get_user_time_zone().get("time_zone", "UTC")
 
     def _compose_online_meeting_body(self, description: str, existing_body_html: str) -> str:
         description_html = self._plain_text_to_html(description)
