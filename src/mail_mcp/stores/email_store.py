@@ -38,23 +38,26 @@ class EmailStore(GraphStoreBase):
         return [name for name in names if name]
 
     def list_messages(self, req: MailboxListMessagesInput) -> list[dict[str, Any]]:
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
         payload = self._request(
             "GET",
             f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(req.folder)}/messages"
             f"?$top={self._normalize_limit(req.limit)}&$orderby=receivedDateTime desc"
             "&$select=id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime",
         )
-        return [map_graph_message(item, folder=req.folder, prefer_preview=True) for item in payload.get("value", [])]
+        return self._map_messages(payload.get("value", []), folder=req.folder, prefer_preview=True, mailbox_time_zone=mailbox_time_zone)
 
     def get_message(self, req: MailboxGetMessageInput) -> dict[str, Any] | None:
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
         payload = self._request(
             "GET",
             f"{self._mailbox_prefix}/messages/{req.message_id}"
             "?$select=id,subject,body,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,receivedDateTime,sentDateTime,parentFolderId",
         )
-        return map_graph_message(payload)
+        return map_graph_message(payload, mailbox_time_zone=mailbox_time_zone)
 
     def search_messages(self, req: MailboxSearchInput) -> list[dict[str, Any]]:
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
         messages_path = f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(req.folder)}/messages"
         select_clause = (
             "id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,"
@@ -85,7 +88,7 @@ class EmailStore(GraphStoreBase):
             f"{messages_path}?{'&'.join(params)}",
             headers=headers,
         )
-        return [map_graph_message(item, folder=req.folder, prefer_preview=True) for item in payload.get("value", [])]
+        return self._map_messages(payload.get("value", []), folder=req.folder, prefer_preview=True, mailbox_time_zone=mailbox_time_zone)
 
     def create_draft(self, req: MailboxComposeInput) -> dict[str, Any]:
         payload = self._request(
@@ -221,3 +224,22 @@ class EmailStore(GraphStoreBase):
     def _plain_text_to_html(self, text: str) -> str:
         safe = escape(text.strip())
         return safe.replace("\n", "<br/>")
+
+    def _map_messages(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        folder: str | None = None,
+        prefer_preview: bool = False,
+        mailbox_time_zone: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return [
+            map_graph_message(
+                item,
+                folder=folder,
+                prefer_preview=prefer_preview,
+                mailbox_time_zone=mailbox_time_zone,
+            )
+            for item in items
+        ]
+

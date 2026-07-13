@@ -144,6 +144,11 @@ class GraphStoreBase:
             return result
         return {"time_zone": fallback, "source": "fallback"}
 
+    def get_mailbox_time_zone_if_available(self) -> str | None:
+        time_zone_info = self.get_user_time_zone(fallback="")
+        resolved = str(time_zone_info.get("time_zone", "") or "").strip()
+        return resolved or None
+
     def resolve_current_user_upn(self) -> str:
         cache_key = f"{self._cache_scope_key()}:current_user_upn"
         cached = self._cache.get(cache_key)

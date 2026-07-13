@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -76,6 +78,92 @@ class GraphCalendarEvent(BaseModel):
     webLink: str = ""
 
 
+# Microsoft Graph mailboxSettings often returns Windows timezone names.
+WINDOWS_TO_IANA_TIME_ZONES: dict[str, str] = {
+    "China Standard Time": "Asia/Shanghai",
+    "Tokyo Standard Time": "Asia/Tokyo",
+    "Korea Standard Time": "Asia/Seoul",
+    "India Standard Time": "Asia/Kolkata",
+    "SE Asia Standard Time": "Asia/Bangkok",
+    "Singapore Standard Time": "Asia/Singapore",
+    "Taipei Standard Time": "Asia/Taipei",
+    "AUS Eastern Standard Time": "Australia/Sydney",
+    "W. Europe Standard Time": "Europe/Berlin",
+    "GMT Standard Time": "Europe/London",
+    "UTC": "UTC",
+    "US Eastern Standard Time": "America/New_York",
+    "Pacific Standard Time": "America/Los_Angeles",
+}
+
+
+def _resolve_zone_info(time_zone: str | None) -> ZoneInfo | None:
+    tz_name = (time_zone or "").strip()
+    if not tz_name:
+        return None
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        mapped = WINDOWS_TO_IANA_TIME_ZONES.get(tz_name, "")
+        if not mapped:
+            return None
+        try:
+            return ZoneInfo(mapped)
+        except Exception:
+            return None
+
+
+def _convert_datetime_to_mailbox_timezone(value: str, mailbox_time_zone: str | None) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+
+    target_zone = _resolve_zone_info(mailbox_time_zone)
+    if target_zone is None:
+        return raw
+
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return raw
+
+    try:
+        return parsed.astimezone(target_zone).isoformat()
+    except Exception:
+        return raw
+
+
+def _convert_event_datetime_to_mailbox_timezone(
+    date_time_value: str,
+    source_time_zone: str | None,
+    mailbox_time_zone: str | None,
+) -> str:
+    raw = (date_time_value or "").strip()
+    if not raw:
+        return ""
+
+    target_zone = _resolve_zone_info(mailbox_time_zone)
+    if target_zone is None:
+        return raw
+
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return raw
+
+    if parsed.tzinfo is None:
+        source_zone = _resolve_zone_info(source_time_zone)
+        if source_zone is None:
+            return raw
+        parsed = parsed.replace(tzinfo=source_zone)
+
+    try:
+        return parsed.astimezone(target_zone).isoformat()
+    except Exception:
+        return raw
+
+
 def recipient_address(recipient: GraphRecipient) -> str:
     return recipient.emailAddress.address or ""
 
@@ -93,6 +181,7 @@ def map_graph_message(
     message: dict[str, Any],
     folder: str | None = None,
     prefer_preview: bool = False,
+    mailbox_time_zone: str | None = None,
 ) -> dict[str, Any]:
     parsed = GraphMessage.model_validate(message or {})
     body_preview = parsed.bodyPreview or ""
@@ -108,8 +197,8 @@ def map_graph_message(
         "subject": parsed.subject or "",
         "bodyPreview": body_preview,
         "sent": not bool(parsed.isDraft),
-        "received_at": parsed.receivedDateTime or "",
-        "sent_at": parsed.sentDateTime or "",
+        "received_at": _convert_datetime_to_mailbox_timezone(parsed.receivedDateTime or "", mailbox_time_zone),
+        "sent_at": _convert_datetime_to_mailbox_timezone(parsed.sentDateTime or "", mailbox_time_zone),
     }
 
     if not prefer_preview:
@@ -118,8 +207,11 @@ def map_graph_message(
     return result
 
 
-def map_graph_calendar_event(event: dict[str, Any]) -> dict[str, Any]:
+def map_graph_calendar_event(event: dict[str, Any], mailbox_time_zone: str | None = None) -> dict[str, Any]:
     parsed = GraphCalendarEvent.model_validate(event or {})
+    start_time_zone = parsed.start.timeZone or ""
+    end_time_zone = parsed.end.timeZone or ""
+    resolved_time_zone = (mailbox_time_zone or "").strip()
     return {
         "id": parsed.id or "",
         "subject": parsed.subject or "",
@@ -133,12 +225,20 @@ def map_graph_calendar_event(event: dict[str, Any]) -> dict[str, Any]:
         "location": parsed.location.displayName or "",
         "isAllDay": bool(parsed.isAllDay),
         "start": {
-            "dateTime": parsed.start.dateTime or "",
-            "timeZone": parsed.start.timeZone or "",
+            "dateTime": _convert_event_datetime_to_mailbox_timezone(
+                parsed.start.dateTime or "",
+                start_time_zone,
+                mailbox_time_zone,
+            ),
+            "timeZone": resolved_time_zone or start_time_zone,
         },
         "end": {
-            "dateTime": parsed.end.dateTime or "",
-            "timeZone": parsed.end.timeZone or "",
+            "dateTime": _convert_event_datetime_to_mailbox_timezone(
+                parsed.end.dateTime or "",
+                end_time_zone,
+                mailbox_time_zone,
+            ),
+            "timeZone": resolved_time_zone or end_time_zone,
         },
         "webLink": parsed.webLink or "",
     }

@@ -25,12 +25,13 @@ class CalendarStore(GraphStoreBase):
     """Calendar-focused operations backed by Microsoft Graph calendar APIs."""
 
     def get_calendar_event(self, req: CalendarGetEventInput) -> dict[str, Any] | None:
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
         payload = self._request(
             "GET",
             f"{self._event_path(req.event_id, req.calendar_id)}"
             "?$select=id,subject,bodyPreview,organizer,attendees,responseStatus,start,end,location,isAllDay,webLink",
         )
-        return map_graph_calendar_event(payload)
+        return map_graph_calendar_event(payload, mailbox_time_zone=mailbox_time_zone)
 
     def create_calendar_event(self, req: CalendarCreateEventInput) -> dict[str, Any]:
         event_time_zone = self._resolve_event_time_zone(req.time_zone)
@@ -154,6 +155,7 @@ class CalendarStore(GraphStoreBase):
         }
 
     def list_calendar_events(self, req: CalendarListEventsInput) -> list[dict[str, Any]]:
+        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
         size = self._normalize_limit(req.limit)
         search_value = req.search or ""
         start_value = req.start or ""
@@ -185,7 +187,18 @@ class CalendarStore(GraphStoreBase):
             )
 
         payload = self._request("GET", path, headers=headers)
-        return [map_graph_calendar_event(item) for item in payload.get("value", [])]
+        return self._map_calendar_events(payload.get("value", []), mailbox_time_zone=mailbox_time_zone)
+
+    def _map_calendar_events(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        mailbox_time_zone: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return [
+            map_graph_calendar_event(item, mailbox_time_zone=mailbox_time_zone)
+            for item in items
+        ]
 
     def _emails_to_attendees(self, emails: list[str]) -> list[dict[str, Any]]:
         attendees: list[dict[str, Any]] = []
