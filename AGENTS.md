@@ -66,8 +66,13 @@ last_updated: 2026-07-06
 	2) 向用户展示会议摘要并请求二次确认“发送邀请/正式创建会议”。
 	3) 仅在用户明确确认后，调用 `calendar_update_event` 填充 `attendees`，由 Graph 触发会议邀请邮件发送。
 * 未经用户二次确认，不得在创建阶段直接写入 `attendees`，避免提前触发邀请邮件。
-* 涉及时间转换或时区展示时，优先调用 `mailbox_get_user_time_zone` 获取当前用户邮箱时区。
-* 若用户明确给出时间范围，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
+* 涉及时间转换、时区展示、或需要传入时区参数时，先调用 `mailbox_get_user_time_zone` 获取当前用户邮箱时区；若返回为空，则再根据通用能力尝试获取时区；若仍获取不到，则时区参数传空。
+* 若用户明确要求查询某一时间区间内的邮件/日历记录，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
+* 时间区间查询的时区处理必须先执行三步：
+	1) 先调用 `mailbox_get_user_time_zone` 获取用户邮箱时区；
+	2) 若返回为空，再根据通用能力尝试获取时区；
+	3) 若仍获取不到，则按“时区为空”处理（不臆造时区）。
+* 完成上述时区处理后，必须先将用户 query 中的时间区间转换为 UTC（ISO 8601，`Z` 结尾），再透传给后台查询参数（如 `$filter`、`startDateTime`、`endDateTime`）。
 * 回复已有邮件时，优先调用 `mailbox_reply_compose(message_id, body)`，以保留历史上下文引用；不要用 `mailbox_compose` 伪造“回复”。
 * 同一发送意图只调用一次起草工具（`mailbox_compose` 或 `mailbox_reply_compose`）；调用后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复起草。
 * 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并告知发送结果与 summary。若发送成功则告知用户发送成功。
@@ -122,7 +127,7 @@ last_updated: 2026-07-06
 * 创建定时任务前，必须先调用 `mailbox_get_user_time_zone` 获取用户时区；再根据该时区将计划发送时间转换为 UTC（ISO 8601，`Z` 结尾）后，作为 `mailbox_create_email_draft_send_job` 的 `schedule_send_time` 入参。
 * 会议（event）创建/更新不要强制在对话侧转换为 UTC：
 	若用户明确提供时区，则按该时区传入；
-	若用户未声明时区，优先先调用 `mailbox_get_user_time_zone`；若仍不可用，则不要臆造 `UTC`，优先留空 `time_zone` 由服务端按当前用户邮箱时区自动解析。
+	若用户未声明时区，先调用 `mailbox_get_user_time_zone`；若返回为空，则再根据通用能力尝试获取时区；若仍获取不到，则 `time_zone` 传空，不臆造 `UTC`。
 * 定时发送链路不在对话内直接发信，发送动作由后续程序自动执行。
 
 ## 4. 语言与输出
