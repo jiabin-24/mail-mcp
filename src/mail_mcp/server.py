@@ -144,13 +144,7 @@ def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> lis
 @APP.tool()
 def mailbox_get_user_time_zone() -> dict[str, str]:
     """Get current user's mailbox time zone."""
-    result = GRAPH_STORE.get_user_time_zone()
-    LOGGER.info(
-        "mailbox_get_user_time_zone result: time_zone=%s source=%s",
-        result.get("time_zone", ""),
-        result.get("source", ""),
-    )
-    return result
+    return GRAPH_STORE.get_user_time_zone()
 
 
 if _EXPOSE_AGENTS_MD:

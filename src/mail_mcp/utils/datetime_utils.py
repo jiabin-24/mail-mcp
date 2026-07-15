@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from zoneinfo import ZoneInfo
 
 
@@ -22,6 +22,20 @@ WINDOWS_TO_IANA_TIME_ZONES: dict[str, str] = {
     "Pacific Standard Time": "America/Los_Angeles",
 }
 
+# Fallback offsets are used only when ZoneInfo cannot be resolved (for example,
+# in minimal runtime images without tzdata). Keep this list limited to zones
+# with stable offsets and no DST ambiguity in typical enterprise usage.
+WINDOWS_TIME_ZONE_FIXED_OFFSET_MINUTES: dict[str, int] = {
+    "China Standard Time": 8 * 60,
+    "Tokyo Standard Time": 9 * 60,
+    "Korea Standard Time": 9 * 60,
+    "India Standard Time": 5 * 60 + 30,
+    "SE Asia Standard Time": 7 * 60,
+    "Singapore Standard Time": 8 * 60,
+    "Taipei Standard Time": 8 * 60,
+    "UTC": 0,
+}
+
 TIMEZONE_SUFFIX_REGEX = re.compile(r"(?:Z|[+-]\d{2}:\d{2})$", re.IGNORECASE)
 MAIL_FILTER_TIME_LITERAL_REGEX = re.compile(
     r"(?P<prefix>\\b(?:receivedDateTime|sentDateTime)\\b\\s+(?:ge|gt|le|lt|eq|ne)\\s+)(?P<quote>'?)(?P<dt>\\d{4}-\\d{2}-\\d{2}T[0-9:.]+)(?P=quote)",
@@ -29,7 +43,7 @@ MAIL_FILTER_TIME_LITERAL_REGEX = re.compile(
 )
 
 
-def resolve_zone_info(time_zone: str | None) -> ZoneInfo | None:
+def resolve_zone_info(time_zone: str | None) -> tzinfo | None:
     tz_name = (time_zone or "").strip()
     if not tz_name:
         return None
@@ -37,12 +51,17 @@ def resolve_zone_info(time_zone: str | None) -> ZoneInfo | None:
         return ZoneInfo(tz_name)
     except Exception:
         mapped = WINDOWS_TO_IANA_TIME_ZONES.get(tz_name, "")
-        if not mapped:
+        if mapped:
+            try:
+                return ZoneInfo(mapped)
+            except Exception:
+                pass
+
+        fixed_offset_minutes = WINDOWS_TIME_ZONE_FIXED_OFFSET_MINUTES.get(tz_name)
+        if fixed_offset_minutes is None:
             return None
-        try:
-            return ZoneInfo(mapped)
-        except Exception:
-            return None
+
+        return timezone(timedelta(minutes=fixed_offset_minutes))
 
 
 def resolve_effective_time_zone(preferred: str | None, mailbox_time_zone: str | None, fallback: str = "UTC") -> str:
