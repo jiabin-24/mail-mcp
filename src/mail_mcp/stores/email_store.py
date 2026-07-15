@@ -24,6 +24,11 @@ GRAPH_QUERY_SAFE = "()':,=-"
 class EmailStore(GraphStoreBase):
     """Email-focused operations backed by Microsoft Graph mailbox APIs."""
 
+    def _resolved_mailbox_time_zone(self) -> str:
+        info = self.get_user_time_zone(fallback="UTC")
+        resolved = str(info.get("time_zone", "") or "").strip()
+        return resolved or "UTC"
+
     def list_folders(self) -> list[str]:
         payload = self._request(
             "GET",
@@ -39,7 +44,7 @@ class EmailStore(GraphStoreBase):
         return [name for name in names if name]
 
     def list_messages(self, req: MailboxListMessagesInput) -> list[dict[str, Any]]:
-        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
+        mailbox_time_zone = self._resolved_mailbox_time_zone()
         payload = self._request(
             "GET",
             f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(req.folder)}/messages"
@@ -49,7 +54,7 @@ class EmailStore(GraphStoreBase):
         return self._map_messages(payload.get("value", []), folder=req.folder, prefer_preview=True, mailbox_time_zone=mailbox_time_zone)
 
     def get_message(self, req: MailboxGetMessageInput) -> dict[str, Any] | None:
-        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
+        mailbox_time_zone = self._resolved_mailbox_time_zone()
         payload = self._request(
             "GET",
             f"{self._mailbox_prefix}/messages/{req.message_id}"
@@ -58,7 +63,7 @@ class EmailStore(GraphStoreBase):
         return map_graph_message(payload, mailbox_time_zone=mailbox_time_zone)
 
     def search_messages(self, req: MailboxSearchInput) -> list[dict[str, Any]]:
-        mailbox_time_zone = self.get_mailbox_time_zone_if_available()
+        mailbox_time_zone = self._resolved_mailbox_time_zone()
         messages_path = f"{self._mailbox_prefix}/mailFolders/{self._folder_segment(req.folder)}/messages"
         select_clause = (
             "id,subject,bodyPreview,from,toRecipients,ccRecipients,bccRecipients,isDraft,"
