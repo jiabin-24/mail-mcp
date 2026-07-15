@@ -9,6 +9,7 @@ from ..schemas.request_models import (
 )
 from ..stores.email_store import EmailStore
 from ..stores.email_send_queue_store import EmailSendQueueStore
+from ..utils.datetime_utils import normalize_query_datetime_with_mailbox_timezone
 
 
 QUEUE_STORE_CONFIG_ERROR = (
@@ -23,6 +24,14 @@ def _require_queue_store(queue_store: EmailSendQueueStore | None) -> EmailSendQu
     return queue_store
 
 
+def _normalize_datetime_input_with_mailbox_time_zone(
+    store: EmailSendQueueStore,
+    value: str,
+) -> str:
+    mailbox_time_zone = store.get_mailbox_time_zone_if_available()
+    return normalize_query_datetime_with_mailbox_timezone(value, mailbox_time_zone)
+
+
 def register_email_queue_tools(
     app,
     queue_store: EmailSendQueueStore | None,
@@ -34,19 +43,21 @@ def register_email_queue_tools(
         schedule_send_time: str,
         subject: str | None = None,
         status: str = "scheduled",
-        sent_time: str | None = None,
     ) -> dict:
         """Create a scheduled send job in Azure Table Storage (EmailSendQueue)."""
         store = _require_queue_store(queue_store)
+        normalized_schedule_send_time = _normalize_datetime_input_with_mailbox_time_zone(
+            store,
+            schedule_send_time,
+        )
 
         req = validate_input(
             MailboxCreateSendJobInput,
             {
                 "draft_email_id": draft_email_id,
-                "schedule_send_time": schedule_send_time,
+                "schedule_send_time": normalized_schedule_send_time,
                 "subject": subject,
                 "status": status,
-                "sent_time": sent_time,
             },
         )
         return store.enqueue_send_job(req)
@@ -85,12 +96,16 @@ def register_email_queue_tools(
     ) -> dict:
         """Update schedule_send_time for one scheduled send job."""
         store = _require_queue_store(queue_store)
+        normalized_schedule_send_time = _normalize_datetime_input_with_mailbox_time_zone(
+            store,
+            schedule_send_time,
+        )
 
         req = validate_input(
             MailboxUpdateSendJobScheduleInput,
             {
                 "job_id": job_id,
-                "schedule_send_time": schedule_send_time,
+                "schedule_send_time": normalized_schedule_send_time,
             },
         )
         updated = store.update_job_schedule(req)

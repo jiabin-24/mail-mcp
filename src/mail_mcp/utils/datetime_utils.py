@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -20,6 +21,12 @@ WINDOWS_TO_IANA_TIME_ZONES: dict[str, str] = {
     "US Eastern Standard Time": "America/New_York",
     "Pacific Standard Time": "America/Los_Angeles",
 }
+
+TIMEZONE_SUFFIX_REGEX = re.compile(r"(?:Z|[+-]\d{2}:\d{2})$", re.IGNORECASE)
+MAIL_FILTER_TIME_LITERAL_REGEX = re.compile(
+    r"(?P<prefix>\\b(?:receivedDateTime|sentDateTime)\\b\\s+(?:ge|gt|le|lt|eq|ne)\\s+)(?P<quote>'?)(?P<dt>\\d{4}-\\d{2}-\\d{2}T[0-9:.]+)(?P=quote)",
+    re.IGNORECASE,
+)
 
 
 def resolve_zone_info(time_zone: str | None) -> ZoneInfo | None:
@@ -86,3 +93,35 @@ def to_utc_iso_from_text(
         preferred_time_zone=preferred_time_zone,
         mailbox_time_zone=mailbox_time_zone,
     )
+
+
+def normalize_query_datetime_with_mailbox_timezone(value: str, mailbox_time_zone: str | None) -> str:
+    """Normalize query datetime text.
+
+    If timezone info is missing, apply mailbox timezone and convert to UTC ISO (Z suffix).
+    If timezone info already exists, preserve the original value.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("datetime text is required")
+
+    if TIMEZONE_SUFFIX_REGEX.search(raw):
+        return raw
+
+    return to_utc_iso_from_text(raw, mailbox_time_zone=mailbox_time_zone)
+
+
+def normalize_mail_filter_time_literals(filter_text: str, mailbox_time_zone: str | None) -> str:
+    """Normalize naive datetime literals in received/sent datetime filter expressions."""
+    raw = (filter_text or "").strip()
+    if not raw:
+        return raw
+
+    def _replace(match: re.Match[str]) -> str:
+        normalized = normalize_query_datetime_with_mailbox_timezone(
+            match.group("dt"),
+            mailbox_time_zone,
+        )
+        return f"{match.group('prefix')}{match.group('quote')}{normalized}{match.group('quote')}"
+
+    return MAIL_FILTER_TIME_LITERAL_REGEX.sub(_replace, raw)

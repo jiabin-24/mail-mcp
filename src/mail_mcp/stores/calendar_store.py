@@ -15,7 +15,10 @@ from ..schemas.request_models import (
     CalendarRespondInvitationInput,
     CalendarUpdateEventInput,
 )
-from ..utils.datetime_utils import to_utc_iso_from_text
+from ..utils.datetime_utils import (
+    normalize_query_datetime_with_mailbox_timezone,
+    to_utc_iso_from_text,
+)
 
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -192,8 +195,10 @@ class CalendarStore(GraphStoreBase):
         headers = {"ConsistencyLevel": "eventual"} if search_value else None
 
         if start_value and end_value:
-            encoded_start = quote(start_value, safe=GRAPH_DATETIME_SAFE)
-            encoded_end = quote(end_value, safe=GRAPH_DATETIME_SAFE)
+            normalized_start = normalize_query_datetime_with_mailbox_timezone(start_value, mailbox_time_zone)
+            normalized_end = normalize_query_datetime_with_mailbox_timezone(end_value, mailbox_time_zone)
+            encoded_start = quote(normalized_start, safe=GRAPH_DATETIME_SAFE)
+            encoded_end = quote(normalized_end, safe=GRAPH_DATETIME_SAFE)
             path = (
                 f"{self._mailbox_prefix}/calendarView"
                 f"?startDateTime={encoded_start}&endDateTime={encoded_end}&{'&'.join(params)}"

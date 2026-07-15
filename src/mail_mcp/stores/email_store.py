@@ -15,6 +15,7 @@ from ..schemas.request_models import (
     MailboxSearchInput,
     MailboxUpdateDraftInput,
 )
+from ..utils.datetime_utils import normalize_mail_filter_time_literals
 
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -64,7 +65,7 @@ class EmailStore(GraphStoreBase):
             "receivedDateTime,sentDateTime"
         )
         search_value = (req.search or "").strip()
-        filter_value = (req.filter or "").strip()
+        filter_value = normalize_mail_filter_time_literals(req.filter or "", mailbox_time_zone)
         orderby_value = (req.orderby or "").strip()
         if not search_value and not filter_value:
             return []
