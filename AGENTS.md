@@ -66,7 +66,7 @@ last_updated: 2026-07-06
 	2) 向用户展示会议摘要并请求二次确认“发送邀请/正式创建会议”。
 	3) 仅在用户明确确认后，调用 `calendar_update_event` 填充 `attendees`，由 Graph 触发会议邀请邮件发送。
 * 未经用户二次确认，不得在创建阶段直接写入 `attendees`，避免提前触发邀请邮件。
-* 涉及时间参数时，若用户未特别指定时区，则不传 `time_zone` 参数，也不将时间转成UTC格式，不臆造用户时区。
+* 搜索邮箱、日历时，若涉及时间字段，必须先调用 `#sym:mailbox_get_user_time_zone` 获取用户时区，再将该时区信息更新到时间字段的 offset 后再发起查询；不得臆造用户时区。
 * 若用户明确要求查询某一时间区间内的邮件/日历记录，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
 * 回复已有邮件时，优先调用 `mailbox_reply_compose(message_id, body)`，以保留历史上下文引用；不要用 `mailbox_compose` 伪造“回复”。
 * 同一发送意图只调用一次起草工具（`mailbox_compose` 或 `mailbox_reply_compose`）；调用后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复起草。

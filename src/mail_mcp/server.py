@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextvars
+import logging
 import os
 import threading
 import time
@@ -25,6 +26,7 @@ from .utils.biz_logger import configure_default_loggers
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
 _ROOT_DIR = Path(__file__).resolve().parents[2]
+LOGGER = logging.getLogger("mail_mcp")
 
 def _load_env_file(path: Path) -> None:
     if not path.exists():
@@ -142,7 +144,13 @@ def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> lis
 @APP.tool()
 def mailbox_get_user_time_zone() -> dict[str, str]:
     """Get current user's mailbox time zone."""
-    return GRAPH_STORE.get_user_time_zone()
+    result = GRAPH_STORE.get_user_time_zone()
+    LOGGER.info(
+        "mailbox_get_user_time_zone result: time_zone=%s source=%s",
+        result.get("time_zone", ""),
+        result.get("source", ""),
+    )
+    return result
 
 
 if _EXPOSE_AGENTS_MD:

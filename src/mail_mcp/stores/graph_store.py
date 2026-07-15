@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from typing import Any, Callable
 from urllib.parse import quote
@@ -10,6 +11,7 @@ from cachetools import TTLCache
 from mail_mcp.tools.search_token_tools import expand_search_tokens
 
 GRAPH_QUERY_SAFE = "()':,=-"
+LOGGER = logging.getLogger("mail_mcp")
 
 class GraphStoreBase:
     """Shared Microsoft Graph client behavior for mailbox-backed stores."""
@@ -127,6 +129,12 @@ class GraphStoreBase:
         cache_key = f"{self._cache_scope_key()}:mailbox_time_zone"
         cached = self._cache.get(cache_key)
         if isinstance(cached, dict):
+            LOGGER.info(
+                "get_user_time_zone cache hit: scope=%s time_zone=%s source=%s",
+                self._cache_scope_key(),
+                cached.get("time_zone", ""),
+                cached.get("source", "cache"),
+            )
             return cached
 
         try:
@@ -134,14 +142,30 @@ class GraphStoreBase:
                 "GET",
                 f"{self._mailbox_prefix}/mailboxSettings?$select=timeZone",
             )
-        except ValueError:
+        except ValueError as exc:
+            LOGGER.warning(
+                "get_user_time_zone fallback triggered: scope=%s fallback=%s reason=%s",
+                self._cache_scope_key(),
+                fallback,
+                str(exc),
+            )
             return {"time_zone": fallback, "source": "fallback"}
 
         resolved = str(payload.get("timeZone", "") or "").strip()
         if resolved:
             result = {"time_zone": resolved, "source": "mailboxSettings"}
+            LOGGER.info(
+                "get_user_time_zone resolved from Graph: scope=%s time_zone=%s",
+                self._cache_scope_key(),
+                resolved,
+            )
             (self._cache.__setitem__(cache_key, result) if self._cache_ttl > 0 else self._cache.pop(cache_key, None))
             return result
+        LOGGER.warning(
+            "get_user_time_zone empty mailboxSettings.timeZone: scope=%s fallback=%s",
+            self._cache_scope_key(),
+            fallback,
+        )
         return {"time_zone": fallback, "source": "fallback"}
 
     def get_mailbox_time_zone_if_available(self) -> str | None:
