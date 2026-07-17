@@ -16,14 +16,13 @@ class AzureTableOAuthTokenStore:
 
     _PENDING_AUTH_PARTITION = "pending_auth"
     _AUTH_CODE_PARTITION = "auth_code"
-    _ACCESS_TOKEN_PARTITION = "access_token"
     # token -> 实际分区 的二级索引（保持按 token 查找接口不变）
     _ACCESS_TOKEN_INDEX_PARTITION = "access_token_index"
     # refresh token 的二级索引：token(rowkey) -> 实际分区
     _REFRESH_TOKEN_INDEX_PARTITION = "refresh_token_index"
-    _REFRESH_TOKEN_PARTITION = "refresh_token"
     _CLEANUP_MIN_INTERVAL_SECONDS = 3600
-    _STARTUP_CLEANUP_EXPIRED_AGE_SECONDS = 180 * 24 * 3600
+    _STARTUP_CLEANUP_TOKEN_EXPIRED_AGE_SECONDS = 90 * 24 * 3600
+    _STARTUP_CLEANUP_PENDING_AND_CODE_EXPIRED_AGE_SECONDS = 24 * 3600
 
     def __init__(self, context: AzureTableContext) -> None:
         self._kv = AzureTableJsonKV(context.table_client)
@@ -304,77 +303,89 @@ class AzureTableOAuthTokenStore:
 
         Each token type is cleaned in a bounded batch (max 100 per run by default).
         """
-        safe_limit = max(1, min(int(limit), 100))
-        now_epoch = int(time.time())
-
-        access_deleted = self._cleanup_expired_from_index_partition(
-            index_partition=self._ACCESS_TOKEN_INDEX_PARTITION,
-            now_epoch=now_epoch,
-            limit=safe_limit,
-        )
-        refresh_deleted = self._cleanup_expired_from_index_partition(
-            index_partition=self._REFRESH_TOKEN_INDEX_PARTITION,
-            now_epoch=now_epoch,
-            limit=safe_limit,
+        return self.cleanup_expired_scopes_before_until_clean(
+            scopes=[
+                "access_token",
+                "refresh_token",
+            ],
+            cutoff_epoch=int(time.time()),
+            limit=limit,
+            max_rounds=1,
         )
 
-        return {
-            "access_token_deleted": access_deleted,
-            "refresh_token_deleted": refresh_deleted,
-            "limit_per_type": safe_limit,
-        }
-
-    def cleanup_oauth_artifacts_expired_before(self, *, cutoff_epoch: int, limit: int = 100) -> dict[str, int]:
-        """Batch delete oauth artifacts expired before cutoff_epoch.
-
-        This is intended for startup compaction of very old expired records.
-        It deletes by expiresepoch across all partitions.
-        """
-        safe_limit = max(1, min(int(limit), 100))
-        safe_cutoff = int(cutoff_epoch)
-
-        deleted = self._kv.delete_expired_entities_global(
-            now_epoch=safe_cutoff,
-            limit=safe_limit,
-        )
-
-        return {
-            "deleted": deleted,
-            "limit_per_type": safe_limit,
-            "cutoff_epoch": safe_cutoff,
-        }
-
-    def cleanup_oauth_artifacts_expired_before_until_clean(
+    def cleanup_expired_scopes_before_until_clean(
         self,
         *,
+        scopes: list[str],
         cutoff_epoch: int,
         limit: int = 100,
         max_rounds: int = 100,
     ) -> dict[str, int]:
-        """Repeat stale cleanup in batches until no rows remain or max rounds reached."""
+        """Repeat scope-based stale cleanup in batches until no rows remain."""
         safe_limit = max(1, min(int(limit), 100))
         safe_rounds = max(1, int(max_rounds))
         safe_cutoff = int(cutoff_epoch)
+        # 统一把 scope 规整为非空字符串，避免调用方传入 None/空白值。
+        normalized_scopes = [scope for raw_scope in scopes if (scope := str(raw_scope or "").strip())]
 
-        total_deleted = 0
+        totals: dict[str, int] = {
+            f"{scope}_deleted": 0
+            for scope in normalized_scopes
+        }
+
         rounds = 0
         for _ in range(safe_rounds):
             rounds += 1
-            result = self.cleanup_oauth_artifacts_expired_before(
-                cutoff_epoch=safe_cutoff,
-                limit=safe_limit,
-            )
-            deleted = int(result.get("deleted", 0))
-            total_deleted += deleted
-            if deleted < safe_limit:
+            should_stop = True
+            for scope in normalized_scopes:
+                deleted = self._cleanup_expired_scope_once(
+                    scope=scope,
+                    cutoff_epoch=safe_cutoff,
+                    limit=safe_limit,
+                )
+                key = f"{scope}_deleted"
+                totals[key] += deleted
+                if deleted >= safe_limit:
+                    should_stop = False
+            if should_stop:
                 break
 
-        return {
-            "deleted": total_deleted,
-            "rounds": rounds,
-            "limit_per_round": safe_limit,
-            "cutoff_epoch": safe_cutoff,
+        totals.update(
+            {
+                "rounds": rounds,
+                "limit_per_round": safe_limit,
+                "cutoff_epoch": safe_cutoff,
+            }
+        )
+        return totals
+
+    def _cleanup_expired_scope_once(
+        self,
+        *,
+        scope: str,
+        cutoff_epoch: int,
+        limit: int,
+    ) -> int:
+        # 两类清理策略：token 索引分区（access/refresh）与固定分区（pending/auth_code）。
+        token_index_partition_by_scope = {
+            "access_token": self._ACCESS_TOKEN_INDEX_PARTITION,
+            "refresh_token": self._REFRESH_TOKEN_INDEX_PARTITION,
         }
+        index_partition = token_index_partition_by_scope.get(scope)
+        if index_partition:
+            return self._cleanup_expired_from_index_partition(
+                index_partition=index_partition,
+                now_epoch=cutoff_epoch,
+                limit=limit,
+            )
+
+        if scope in {self._PENDING_AUTH_PARTITION, self._AUTH_CODE_PARTITION}:
+            return self._kv.delete_expired_entities(
+                partition_key=scope,
+                now_epoch=cutoff_epoch,
+                limit=limit,
+            )
+        return 0
 
     def _schedule_async_cleanup(self, *, limit: int = 100) -> None:
         with self._cleanup_lock:
@@ -413,6 +424,7 @@ class AzureTableOAuthTokenStore:
         limit: int,
     ) -> int:
         safe_partition = index_partition.replace("'", "''")
+        # 仅查询 index 分区内已过期记录，再按索引回查并删除主记录。
         filter_expr = (
             f"PartitionKey eq '{safe_partition}' "
             f"and expiresepoch ge 0 "
@@ -429,6 +441,7 @@ class AzureTableOAuthTokenStore:
             index_payload = _entity_payload(index_entity) or {}
             target_partition = str(index_payload.get("partitionkey", "") or "").strip()
             if target_partition:
+                # 先删主分区记录，再删 index，避免索引悬挂。
                 self._kv.delete(partition_key=target_partition, row_key=row_key)
 
             self._kv.delete(partition_key=index_partition, row_key=row_key)

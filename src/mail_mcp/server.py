@@ -92,9 +92,25 @@ def _run_startup_token_cleanup_once() -> None:
     if _oauth_token_store is None:
         return
     try:
-        cutoff_epoch = int(time.time()) - _oauth_token_store._STARTUP_CLEANUP_EXPIRED_AGE_SECONDS
-        _oauth_token_store.cleanup_oauth_artifacts_expired_before_until_clean(
-            cutoff_epoch=cutoff_epoch,
+        now_epoch = int(time.time())
+        token_cutoff_epoch = now_epoch - _oauth_token_store._STARTUP_CLEANUP_TOKEN_EXPIRED_AGE_SECONDS
+        pending_and_code_cutoff_epoch = (
+            now_epoch - _oauth_token_store._STARTUP_CLEANUP_PENDING_AND_CODE_EXPIRED_AGE_SECONDS
+        )
+        _oauth_token_store.cleanup_expired_scopes_before_until_clean(
+            scopes=[
+                "access_token",
+                "refresh_token",
+            ],
+            cutoff_epoch=token_cutoff_epoch,
+            limit=100,
+        )
+        _oauth_token_store.cleanup_expired_scopes_before_until_clean(
+            scopes=[
+                "pending_auth",
+                "auth_code",
+            ],
+            cutoff_epoch=pending_and_code_cutoff_epoch,
             limit=100,
         )
     except Exception:
