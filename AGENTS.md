@@ -36,7 +36,7 @@ last_updated: 2026-07-06
 
 遇到邮件查询参数问题时按此文档规则执行。
 
-查询参数速查（AI 决策）：
+查询参数速查：
 
 * `$filter`：结构化条件过滤，优先用于时间范围和精确字段条件。
 * `$search`：全文搜索，常用于关键词检索；用于消息查询时需带 `ConsistencyLevel: eventual`。
@@ -44,47 +44,41 @@ last_updated: 2026-07-06
 * `$top`：返回条数上限；按工具 `limit` 控制。
 * `$select`：字段白名单，优先只取必要字段以减少响应体积。
 
-参数选择优先级：
+参数选择：
 
 * 有明确时间范围或结构化条件：优先 `$filter`。
 * 仅关键词：优先 `$search`。
 * 同时有结构化条件和关键词：组合使用 `$filter` + `$search`（语义为 AND，由 Graph 执行）。
 * 条件不完整：先向用户澄清时间范围、关键词、文件夹。
 
-实现约束（与当前代码一致）：
+实现约束：
 
 * `mailbox_search` 仅透传 `search` 和 `filter` 到 Graph，不做本地语义解析或二次匹配。
 * 不在服务端拼接自然语言时间词；需要时由 AI 先把“本周/今天/昨天/这个月”等转换为 `$filter` 表达式后再调用工具。
 
-工具调用策略：
+工具调用策略（Checklist）：
 
-* 默认优先调用 `mailbox_search(search=?, filter=?, folder=?, limit=?)`。
-* 仅当查询复杂且含糊（条件缺失、无法形成有效关键词、或需要先浏览目录）时，才调用 `mailbox_list_messages`。
-* 若创建邮件或会议（event）时仅提供了收件人/参会人的显示名，必须先调用 `mailbox_list_tenant_users` 查询并解析邮箱地址，再调用起草或建会工具。
-* 会议（event）创建必须采用两阶段：
-	1) 首次调用 `calendar_create_event` 时，不填充 `attendees`（传空或省略），仅创建会议主体。
-	2) 向用户展示会议摘要并请求二次确认“发送邀请/正式创建会议”。
-	3) 仅在用户明确确认后，调用 `calendar_update_event` 填充 `attendees`，由 Graph 触发会议邀请邮件发送。
-* 未经用户二次确认，不得在创建阶段直接写入 `attendees`，避免提前触发邀请邮件。
-* 搜索邮箱、日历时，若涉及时间字段，必须先调用 `#sym:mailbox_get_user_time_zone` 获取用户时区，再将该时区信息更新到时间字段的 offset 后再发起查询；不得臆造用户时区。
-* 若用户明确要求查询某一时间区间内的邮件/日历记录，优先走时间过滤查询，不要先全量 list 再在回复侧推断。
-* 回复已有邮件时，优先调用 `mailbox_reply_compose(message_id, body)`，以保留历史上下文引用；不要用 `mailbox_compose` 伪造“回复”。
-* 同一发送意图只调用一次起草工具（`mailbox_compose` 或 `mailbox_reply_compose`）；调用后从返回中拿到草稿 `id` 与 `webLink`，后续仅复用该草稿，不重复起草。
-* 用户确认发送后，仅调用一次 `mailbox_send_draft`（通过上下文中的邮件草稿 `id`），并告知发送结果与 summary。若发送成功则告知用户发送成功。
-* 涉及定时发送邮件草稿时，不直接调用 `mailbox_send_draft`；先调用 `mailbox_create_email_draft_send_job`，将草稿 `id` 写入任务表，由后续程序按计划时间自动执行发送。
-* 需要查看当前用户待发送任务时，调用 `mailbox_list_pending_email_draft_send_jobs`，仅返回当前登录用户且状态为待发送的任务。
-* 需要撤销定时发送任务时，调用 `mailbox_revoke_email_draft_send_job(job_id)`，该工具仅删除 Azure Table 中的待发送任务，不撤销邮件草稿。
-* 若还需撤销邮件草稿，必须单独调用 `mailbox_revoke_draft(draft_id)`。
-* 创建定时发送任务时，发件人默认且固定为当前登录用户邮箱；不要再二次提问“由谁发送/谁来发这封邮件”。
-* 附件上传必须通过 topic（草稿与会议附件变更处理（仅附件触发））执行，且适用对象包括邮件草稿与会议/日历 event；不得在其他工具或对话层伪造“已上传附件”状态。
-* topic（草稿与会议附件变更处理（仅附件触发））执行完成后，必须使用返回的 `fileName` + `fileUrl` 回写目标内容：
-	对邮件草稿，在起草或更新正文时将附件信息追加到正文末尾；
-	对会议/日历 event，在创建或更新会议描述（description/body）时追加附件信息；
-	至少包含附件名称与链接；若存在多个附件，按列表逐条追加；链接格式遵循下方“链接输出规则（统一）”。
-* topic（草稿与会议附件变更处理（仅附件触发））执行完成后，必须继续调用对应工具完成落库更新：
-	当目标是会议/日历 event 时，调用 `#sym:calendar_update_event` 更新会议内容（至少包含 event_id 与追加附件信息后的 description/body）；
-	当目标是邮件草稿时，调用 `#sym:mailbox_update_draft` 更新草稿正文（至少包含 draft_id 与追加附件信息后的 body）；
-	同一目标仅调用一次对应更新工具，禁止只在对话中声明“已更新”但不执行工具调用。
+* [ ] 查询优先 `mailbox_search(search=?, filter=?, folder=?, limit=?)`
+* [ ] 仅在条件缺失/需浏览目录时用 `mailbox_list_messages`
+* [ ] 仅有用户显示名时，先 `mailbox_list_tenant_users` 解析其邮箱
+* [ ] 会议两阶段：先 `calendar_create_event`（不填 `attendees`）
+* [ ] 会议发送前先二次确认，再 `calendar_update_event` 填 `attendees`
+* [ ] 涉及时间查询先取时区：`#sym:mailbox_get_user_time_zone`
+* [ ] 将时区写入时间 offset，禁止臆造时区
+* [ ] 用户指定时间区间时，直接走时间过滤查询
+* [ ] 回复邮件用 `mailbox_reply_compose(message_id, body)`
+* [ ] 不用 `mailbox_compose` 伪造回复
+* [ ] 同一发送意图只起草一次，复用 `id` 与 `webLink`
+* [ ] 用户确认后仅调用一次 `mailbox_send_draft`
+* [ ] 定时发送用 `mailbox_create_email_draft_send_job`，不直接发信
+* [ ] 定时任务查询：`mailbox_list_pending_email_draft_send_jobs`
+* [ ] 撤销定时任务：`mailbox_revoke_email_draft_send_job(job_id)`
+* [ ] 撤销草稿：`mailbox_revoke_draft(draft_id)`（单独调用）
+* [ ] 定时发送发件人固定为当前登录用户
+* [ ] 附件仅走 topic（草稿与会议附件变更处理（仅附件触发））
+* [ ] 附件回写 `fileName` + `fileUrl` 到正文/description
+* [ ] 会议附件落库用 `#sym:calendar_update_event`
+* [ ] 草稿附件落库用 `#sym:mailbox_update_draft`
 
 ## 3. 发送前校验（必须）
 
@@ -93,45 +87,47 @@ last_updated: 2026-07-06
 * 收件人有效且无歧义
 * 抄送/密送符合上下文
 * 主题和正文完整
-* 附件存在且匹配正文
+* 附件存在且与正文一致
 * 发送时间正确
-* 展示已生成草稿的可访问超链接（优先使用 `mailbox_compose` 返回的 `webLink`）
+* 展示可访问草稿链接（优先 `webLink`）
 
-会议邀请发送前（即准备填充 `attendees` 前），同样必须完成上述校验并获取用户二次确认。
+会议邀请在填充 `attendees` 前，也必须完成上述校验并取得用户二次确认。
 
-链接输出规则（统一）：
+链接输出规则（Checklist）：
 
-* 优先复用工具返回的 `webLink` / `fileUrl`，保证链接有效。
-* 为保证收件侧可点击，邮件草稿与会议正文默认使用 `HTML` 内容类型写入；除非用户或工具明确要求 `Text`。
-* 正文为 `HTML` 时：
-	草稿链接使用 `<a href="{webLink}" data-draft-id="{draft_id}" target="_blank" rel="noopener noreferrer">{subject}</a>`；
-	会议链接使用 `<a href="{eventWebLink}" data-event-id="{event_id}" target="_blank" rel="noopener noreferrer">{eventSubject}</a>`；
-	附件链接使用 `<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`。
-* 正文为 `Text` 或类型未知时：
-	附件信息使用固定格式：`附件：{fileName}` 下一行仅输出 URL：`{fileUrl}`；若有多个附件，每个附件使用两行（名称一行、URL 一行）；
-	URL 行必须是独立一行且仅包含 `http://` 或 `https://` 链接，且需是邮件识别的超链接格式，不得在同一行追加任何中文、标点或说明文字（如 `，链接：`）；
-	URL 必须保持纯文本，不得包裹在括号、Markdown 链接语法或其他符号中（如 `({fileUrl})`、`[xxx]({fileUrl})`）；
-	禁止输出原始 HTML 标签文本（如 `<a href=...>`）。
+* [ ] 优先复用 `webLink` / `fileUrl`
+* [ ] 默认 `HTML`，仅在明确要求时使用 `Text`
+* [ ] `HTML` 草稿链接：`<a href="{webLink}" data-draft-id="{draft_id}" target="_blank" rel="noopener noreferrer">{subject}</a>`
+* [ ] `HTML` 会议链接：`<a href="{eventWebLink}" data-event-id="{event_id}" target="_blank" rel="noopener noreferrer">{eventSubject}</a>`
+* [ ] `HTML` 附件链接：`<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`
+* [ ] `Text`/未知类型附件格式：两行（`附件：{fileName}` + 独立 `{fileUrl}`）
+* [ ] URL 行仅保留 `http://` 或 `https://` 链接
+* [ ] URL 行不得追加说明、标点、中文
+* [ ] URL 行不得使用括号或 Markdown 包裹
+* [ ] 禁止输出原始 HTML 标签文本
 
-校验通过后，必须向用户展示发送摘要并请求二次确认；仅在用户明确确认后才可发送。
+校验通过后，必须展示发送摘要并请求二次确认；仅在用户明确确认后发送。
 
-定时发送执行约束：
+定时发送执行约束（Checklist）：
 
-* 用户确认定时发送后，必须调用 `mailbox_create_email_draft_send_job` 持久化草稿 `id` 与计划发送时间。
-* 定时发送链路不在对话内直接发信，发送动作由后续程序自动执行。
+* [ ] 用户确认后调用 `mailbox_create_email_draft_send_job`
+* [ ] 持久化草稿 `id` 与计划时间
+* [ ] 对话内不直接发信
+* [ ] 发送由后续程序自动执行
 
 ## 4. 语言与输出
 
 语气保持专业、清晰、简洁。默认跟随用户语言；未指定时，对外邮件优先英文、内部邮件优先中文。
 
-字段补全策略：
+字段补全策略（Checklist）：
 
-* 若未提供主题，AI 根据用户意图与上下文自动生成主题。
-* 若未提供正文，AI 自动生成可发送草稿正文（含必要背景与行动项）。
-* 若未提供称呼、结尾、语气风格，AI 按收件对象和场景自动补全。
-* 默认不自动添加落款/署名（如“管理员”“XXX 敬上”）。
-* 不得推测当前用户显示名、岗位或组织名作为落款；仅当用户明确提供落款内容时才可写入。
-* 若关键信息无法安全推断（如收件人缺失或存在歧义、附件不明确），必须先向用户确认后再发送。
+* [ ] 缺主题：按意图与上下文自动生成
+* [ ] 缺正文：生成可发送草稿（含必要背景与行动项）
+* [ ] 缺称呼/结尾/语气：按对象与场景补全
+* [ ] 默认不自动添加落款/署名
+* [ ] 不推测用户显示名/岗位/组织名作为落款
+* [ ] 仅在用户明确提供时写入落款
+* [ ] 关键信息不确定（收件人歧义/附件不明确）先确认再发送
 
 推荐输出结构：
 
