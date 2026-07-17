@@ -185,8 +185,6 @@ class AzureTableOAuthTokenStore:
         account_key: str,
         limit: int = 200,
     ) -> int:
-        if not client_key or not account_key:
-            return 0
         return self._kv.delete_expired_entities(
             partition_key=_access_token_partition(client_key, account_key),
             now_epoch=int(time.time()),
@@ -325,19 +323,17 @@ class AzureTableOAuthTokenStore:
         safe_limit = max(1, min(int(limit), 100))
         safe_rounds = max(1, int(max_rounds))
         safe_cutoff = int(cutoff_epoch)
-        # 统一把 scope 规整为非空字符串，避免调用方传入 None/空白值。
-        normalized_scopes = [scope for raw_scope in scopes if (scope := str(raw_scope or "").strip())]
 
         totals: dict[str, int] = {
             f"{scope}_deleted": 0
-            for scope in normalized_scopes
+            for scope in scopes
         }
 
         rounds = 0
         for _ in range(safe_rounds):
             rounds += 1
             should_stop = True
-            for scope in normalized_scopes:
+            for scope in scopes:
                 deleted = self._cleanup_expired_scope_once(
                     scope=scope,
                     cutoff_epoch=safe_cutoff,
@@ -378,14 +374,11 @@ class AzureTableOAuthTokenStore:
                 now_epoch=cutoff_epoch,
                 limit=limit,
             )
-
-        if scope in {self._PENDING_AUTH_PARTITION, self._AUTH_CODE_PARTITION}:
-            return self._kv.delete_expired_entities(
-                partition_key=scope,
-                now_epoch=cutoff_epoch,
-                limit=limit,
-            )
-        return 0
+        return self._kv.delete_expired_entities(
+            partition_key=scope,
+            now_epoch=cutoff_epoch,
+            limit=limit,
+        )
 
     def _schedule_async_cleanup(self, *, limit: int = 100) -> None:
         with self._cleanup_lock:
