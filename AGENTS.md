@@ -51,6 +51,10 @@ last_updated: 2026-07-06
 * 同时有结构化条件和关键词：组合使用 `$filter` + `$search`（语义为 AND，由 Graph 执行）。
 * 条件不完整：先向用户澄清时间范围、关键词、文件夹。
 
+文件夹选择：
+
+* 查询“已发送/发件箱/我发送的邮件”默认 `sentitems`，查询“归档/草稿/已删除/回收站”分别默认 `archive`/`drafts`/`deleteditems`；用户明确指定时以用户指定为准，文件夹名称不确定、租户命名可能不同或查询失败时先调用 `mailbox_list_folders`。
+
 实现约束：
 
 * `mailbox_search` 仅透传 `search` 和 `filter` 到 Graph，不做本地语义解析或二次匹配。
@@ -60,6 +64,7 @@ last_updated: 2026-07-06
 
 * [ ] 查询优先 `mailbox_search(search=?, filter=?, folder=?, limit=?)`
 * [ ] 仅在条件缺失/需浏览目录时用 `mailbox_list_messages`
+* [ ] 查询结果过多时，优先压缩展示字段并提示用户分页或缩小范围，尽可能先展示全量记录索引
 * [ ] 仅有用户显示名时，先 `mailbox_list_tenant_users` 解析其邮箱
 * [ ] 会议两阶段：先 `calendar_create_event`（不填 `attendees`）
 * [ ] 会议发送前先二次确认，再 `calendar_update_event` 填 `attendees`
@@ -76,6 +81,7 @@ last_updated: 2026-07-06
 * [ ] 撤销草稿：`mailbox_revoke_draft(draft_id)`（单独调用）
 * [ ] 定时发送发件人固定为当前登录用户
 * [ ] 附件仅走 topic（草稿与会议附件变更处理（仅附件触发））
+* [ ] 上传完附件并经 topic 处理后，必须将得到的附件名称+链接追加到邮件正文末尾，并触发更新邮件草稿tool
 * [ ] 附件回写 `fileName` + `fileUrl` 到正文/description
 * [ ] 会议附件落库用 `#sym:calendar_update_event`
 * [ ] 草稿附件落库用 `#sym:mailbox_update_draft`
