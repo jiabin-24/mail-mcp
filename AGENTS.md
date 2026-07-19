@@ -68,7 +68,7 @@ last_updated: 2026-07-06
 * [ ] 仅有用户显示名时，先 `mailbox_list_tenant_users` 解析其邮箱
 * [ ] 会议两阶段：先 `calendar_create_event`（不填 `attendees`）
 * [ ] 会议发送前先二次确认，再 `calendar_update_event` 填 `attendees`
-* [ ] 涉及时间查询先取时区：`#sym:mailbox_get_user_time_zone`
+* [ ] 涉及时间查询先取时区：`mailbox_get_user_time_zone`
 * [ ] 将时区写入时间 offset，禁止臆造时区
 * [ ] 用户指定时间区间时，直接走时间过滤查询
 * [ ] 回复邮件用 `mailbox_reply_compose(message_id, body)`
@@ -83,8 +83,8 @@ last_updated: 2026-07-06
 * [ ] 附件仅走 topic（草稿与会议附件变更处理（仅附件触发））
 * [ ] 上传完附件并经 topic 处理后，必须将得到的附件名称+链接追加到邮件正文末尾，并触发更新邮件草稿tool
 * [ ] 附件回写 `fileName` + `fileUrl` 到正文/description
-* [ ] 会议附件落库用 `#sym:calendar_update_event`
-* [ ] 草稿附件落库用 `#sym:mailbox_update_draft`
+* [ ] 会议附件落库用 `calendar_update_event`
+* [ ] 草稿附件落库用 `mailbox_update_draft`
 
 ## 3. 发送前校验（必须）
 
@@ -108,8 +108,6 @@ last_updated: 2026-07-06
 * [ ] `HTML` 附件链接：`<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`
 * [ ] `Text`/未知类型附件格式：两行（`附件：{fileName}` + 独立 `{fileUrl}`）
 * [ ] URL 行仅保留 `http://` 或 `https://` 链接
-* [ ] URL 行不得追加说明、标点、中文
-* [ ] URL 行不得使用括号或 Markdown 包裹
 * [ ] 禁止输出原始 HTML 标签文本
 
 校验通过后，必须展示发送摘要并请求二次确认；仅在用户明确确认后发送。
@@ -157,5 +155,6 @@ last_updated: 2026-07-06
 * 附件：{attachmentLink}
 * 发送时间：
 * 正文：
+	> {body}
 * 校验结果：通过 / 不通过
 ```
