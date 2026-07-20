@@ -597,6 +597,22 @@ class DynamicOAuthProvider(
         mcp_access_token: str,
         force_refresh: bool = False,
     ) -> str | None:
+        """根据 MCP access token 解析并返回可用于调用 Graph 的 access token。
+
+        处理规则：
+        1. 先按 mcp_access_token 加载 MCP token 与外部 Graph token 的映射关系；
+        2. 若 MCP token 已过期，清理对应持久化记录并返回 None；
+        3. 当 force_refresh=True 时，无条件使用外部 refresh token 刷新 Graph token；
+        4. 当已记录的 Graph token 到期时，自动刷新并回写内存与持久层映射；
+        5. 其余场景直接返回当前缓存/持久化中的 Graph access token。
+
+        Args:
+            mcp_access_token: MCP 服务签发的 access token。
+            force_refresh: 是否强制刷新 Graph token。
+
+        Returns:
+            可用于 Graph API 的 access token；若映射不存在或已失效则返回 None。
+        """
         now = int(time.time())
         access, external = await self._load_access_bundle(mcp_access_token)
 

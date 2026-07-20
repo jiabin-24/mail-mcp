@@ -63,6 +63,8 @@ EMAIL_SEND_QUEUE_STORE = EmailSendQueueStore(token_provider=TOKEN_PROVIDER)
 
 _oauth_provider: DynamicOAuthProvider | None = None
 _auth_settings: AuthSettings | None = None
+_oauth_client_store = None
+_oauth_token_store = None
 _oauth_config = get_dynamic_oauth_config_from_env()
 if _oauth_config:
     _oauth_client_store = build_oauth_client_store_from_env()
