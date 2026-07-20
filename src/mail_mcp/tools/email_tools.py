@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import json
-from functools import wraps
-from typing import Any, Callable, ParamSpec, TypeVar
-
 from ..stores.email_store import EmailStore
 from ..schemas.request_models import (
     MailboxComposeInput,
@@ -15,27 +11,6 @@ from ..schemas.request_models import (
     MailboxUpdateDraftInput,
     validate_input,
 )
-
-
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-def log_tool_result(func: Callable[P, R]) -> Callable[P, R]:
-    """Print tool return payload to console for debugging."""
-
-    @wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        result = func(*args, **kwargs)
-        try:
-            payload = json.dumps(result, ensure_ascii=False, default=str, indent=2)
-        except Exception:
-            payload = repr(result)
-        print(f"[tool:{func.__name__}] return=\n{payload}")
-        return result
-
-    return wrapper
-
 
 def register_email_tools(app, email_store: EmailStore) -> None:
     @app.tool()
@@ -62,7 +37,6 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         return message
 
     @app.tool()
-    @log_tool_result
     def mailbox_search(
         search: str | None = None,
         filter: str | None = None,
