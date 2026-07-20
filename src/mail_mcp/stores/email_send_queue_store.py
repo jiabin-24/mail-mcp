@@ -32,6 +32,16 @@ class EmailSendQueueStore(GraphStoreBase):
 
     def enqueue_send_job(self, req: MailboxCreateSendJobInput) -> dict[str, Any]:
         user_upn = self.resolve_current_user_upn()
+        existing_scheduled_job = self._find_scheduled_job_for_draft(
+            user_upn=user_upn,
+            draft_email_id=req.draft_email_id,
+        )
+        if existing_scheduled_job is not None:
+            return {
+                "status": "no_change",
+                "message": "scheduled send job already exists for this draft"
+            }
+
         row_key = uuid4().hex
         mailbox_time_zone = self.get_mailbox_time_zone_if_available()
 
@@ -97,11 +107,21 @@ class EmailSendQueueStore(GraphStoreBase):
             raise ValueError(f"send job not found: {job_id}") from exc
         return self._map_entity(entity)
 
-    def delete_job(self, job_id: str) -> dict[str, Any]:
+    def cancel_job(self, job_id: str) -> dict[str, Any]:
         user_upn = self.resolve_current_user_upn()
-        job = self.get_job(job_id)
-        self._table_client.delete_entity(partition_key=user_upn, row_key=job_id)
-        return job
+        self.get_job(job_id)
+
+        self._table_client.update_entity(
+            entity={
+                "PartitionKey": user_upn,
+                "RowKey": job_id,
+                "status": "cancel",
+                "updatedtime": to_utc_iso_from_datetime(datetime.now(tz=UTC)),
+            },
+            mode="merge",
+        )
+
+        return self.get_job(job_id)
 
     def update_job_schedule(self, req: MailboxUpdateSendJobScheduleInput) -> dict[str, Any]:
         user_upn = self.resolve_current_user_upn()
@@ -141,6 +161,24 @@ class EmailSendQueueStore(GraphStoreBase):
             "subject": str(entity.get("subject", "") or ""),
             "createdtime": str(entity.get("createdtime", "") or ""),
         }
+
+    def _find_scheduled_job_for_draft(
+        self,
+        *,
+        user_upn: str,
+        draft_email_id: str,
+    ) -> dict[str, Any] | None:
+        escaped_upn = user_upn.replace("'", "''")
+        escaped_draft_email_id = draft_email_id.replace("'", "''")
+        query_filter = (
+            f"PartitionKey eq '{escaped_upn}' and "
+            f"draftemailid eq '{escaped_draft_email_id}' and "
+            "status eq 'scheduled'"
+        )
+
+        for entity in self._table_client.query_entities(query_filter=query_filter):
+            return self._map_entity(entity)
+        return None
 
     def dispatch_pending_jobs(self) -> dict[str, Any]:
         query_filter = "(status eq 'scheduled' or status eq 'failed')"
