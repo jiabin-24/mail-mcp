@@ -1,0 +1,88 @@
+name: Deploy Mail MCP to App Service
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+env:
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+  RESOURCE_GROUP: ${{ vars.AZ_RESOURCE_GROUP }}
+  APP_SERVICE_NAME: ${{ vars.AZ_APP_SERVICE_NAME }}
+  ACR_NAME: ${{ vars.AZ_ACR_NAME }}
+  ACR_LOGIN_SERVER: ${{ vars.AZ_ACR_LOGIN_SERVER }}
+
+  IMAGE_NAME: mail-mcp
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate required env
+        run: |
+          set -euo pipefail
+          required_vars=(
+            AZURE_CLIENT_ID
+            AZURE_CLIENT_SECRET
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
+            RESOURCE_GROUP
+            APP_SERVICE_NAME
+            ACR_NAME
+            ACR_LOGIN_SERVER
+            IMAGE_NAME
+          )
+
+          for key in "${required_vars[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required env: $key"
+              exit 1
+            fi
+          done
+
+      - name: Azure login (service principal)
+        run: |
+          set -euo pipefail
+          az login \
+            --service-principal \
+            --username "$AZURE_CLIENT_ID" \
+            --password "$AZURE_CLIENT_SECRET" \
+            --tenant "$AZURE_TENANT_ID"
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+
+      - name: Generate image tag (yyyyMMddHHmm)
+        run: |
+          set -euo pipefail
+          IMAGE_TAG=$(date +"%Y%m%d%H%M")
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+          echo "Using IMAGE_TAG=$IMAGE_TAG"
+
+      - name: Build image with ACR build
+        run: |
+          set -euo pipefail
+          az acr build \
+            --registry "$ACR_NAME" \
+            --image "$IMAGE_NAME:$IMAGE_TAG" \
+            .
+
+      - name: Update App Service container image
+        run: |
+          set -euo pipefail
+          FULL_IMAGE="$ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
+          az webapp config container set \
+            --name "$APP_SERVICE_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --container-image-name "$FULL_IMAGE"
+
+      - name: Show deployed image
+        run: |
+          echo "Deployed image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
