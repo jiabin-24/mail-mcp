@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextvars
 import logging
 import os
 import threading
@@ -22,6 +21,7 @@ from .tools.calendar_tools import register_calendar_tools
 from .tools.email_tools import register_email_tools
 from .tools.email_queue_tools import register_email_queue_tools
 from .utils.oauth_dynamic_provider import DynamicOAuthProvider, get_dynamic_oauth_config_from_env
+from .utils.request_token_provider import RequestTokenProvider
 from .utils.biz_logger import configure_default_loggers
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
@@ -53,11 +53,8 @@ def _bootstrap_env() -> None:
 _bootstrap_env()
 configure_default_loggers()
 
-CURRENT_ACCESS_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_access_token", default=None
-)
 MCP_SCOPE = "mail.mcp"
-TOKEN_PROVIDER = CURRENT_ACCESS_TOKEN.get
+TOKEN_PROVIDER = RequestTokenProvider.as_callable()
 EMAIL_STORE, CALENDAR_STORE, GRAPH_STORE = (EmailStore(token_provider=TOKEN_PROVIDER), CalendarStore(token_provider=TOKEN_PROVIDER), GraphStoreBase(token_provider=TOKEN_PROVIDER))
 EMAIL_SEND_QUEUE_STORE = EmailSendQueueStore(token_provider=TOKEN_PROVIDER)
 
@@ -234,7 +231,6 @@ def _build_asgi_app():
     starlette_app.add_route("/jobs/dispatch", dispatch_send_jobs, methods=["GET"])
     starlette_app.add_middleware(
         OAuthTokenLogMiddleware,
-        token_context=CURRENT_ACCESS_TOKEN,
         token_resolver=(_oauth_provider.resolve_graph_access_token if _oauth_provider else None),
         require_bearer_token=(_oauth_provider is None),
     )

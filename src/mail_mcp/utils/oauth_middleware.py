@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextvars
 import hashlib
 import inspect
 import logging
@@ -51,12 +50,10 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: Any,
-        token_context: contextvars.ContextVar[str | None],
         token_resolver: Callable[..., str | None | Awaitable[str | None]] | None = None,
         require_bearer_token: bool = True,
     ) -> None:
         super().__init__(app)
-        self._token_context = token_context
         self._token_resolver = token_resolver
         self._require_bearer_token = require_bearer_token
         self._token_cache: dict[str, float] = {}
@@ -82,11 +79,7 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
             if not is_valid:
                 return self._invalid_or_expired_response()
 
-        token_ctx = self._token_context.set(resolved_token or token_value)
-        try:
-            return await call_next(request)
-        finally:
-            self._token_context.reset(token_ctx)
+        return await call_next(request)
 
     async def _resolve_and_validate_delegated_token(
         self,
