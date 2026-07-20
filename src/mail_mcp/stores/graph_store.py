@@ -10,6 +10,8 @@ import httpx
 from cachetools import TTLCache
 from mail_mcp.tools.search_token_tools import expand_search_tokens
 
+from ..utils.token_log_utils import log_token_value
+
 GRAPH_QUERY_SAFE = "()':,=-"
 LOGGER = logging.getLogger("mail_mcp")
 
@@ -51,6 +53,14 @@ class GraphStoreBase:
             raise ValueError(
                 "No Outlook token available. Provide bearer token in Authorization header or set OUTLOOK_ACCESS_TOKEN."
             )
+
+        log_token_value(
+            LOGGER,
+            token,
+            full_key="graph_request_token",
+            preview_key="graph_request_token_preview",
+        )
+        LOGGER.info("Graph request: %s %s", method, path)
 
         req_headers = {
             "Authorization": f"Bearer {token}",
