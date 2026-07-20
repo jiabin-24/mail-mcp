@@ -12,46 +12,30 @@ import httpx
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from .token_log_utils import log_token_value
+
 AUTH_LOGGER = logging.getLogger("mail_mcp.auth")
-TOKEN_LOG_MODE_ENV = "DELEGATED_TOKEN_LOG_MODE"
-TOKEN_LOG_MODE_MASKED = "masked"
-TOKEN_LOG_MODE_FULL = "full"
-TOKEN_LOG_MODE_NONE = "none"
-TOKEN_PREVIEW_LENGTH = 12
 TOKEN_VALIDATION_CACHE_TTL_ENV = "DELEGATED_TOKEN_CACHE_TTL_SECONDS"
 DEFAULT_VALIDATION_CACHE_TTL_SECONDS = 300
 GRAPH_BASE_URL_ENV = "GRAPH_BASE_URL"
 GRAPH_DEFAULT_BASE_URL = "https://graph.microsoft.com/v1.0"
 INVALID_OR_EXPIRED_TOKEN_ERROR = "invalid or expired token"
 
-def _resolve_token_log_mode() -> str:
-    mode = os.getenv(TOKEN_LOG_MODE_ENV, TOKEN_LOG_MODE_NONE).strip().lower()
-    if mode in {TOKEN_LOG_MODE_MASKED, TOKEN_LOG_MODE_FULL, TOKEN_LOG_MODE_NONE}:
-        return mode
-
-    return TOKEN_LOG_MODE_NONE
-
 def _extract_token(authorization: str) -> str:
     if authorization.lower().startswith("bearer "):
         return authorization[7:]
     return authorization
 
-
 def _has_bearer_prefix(authorization: str) -> bool:
     return authorization.lower().startswith("bearer ")
 
-def _masked_token(token: str) -> str:
-    if len(token) > TOKEN_PREVIEW_LENGTH:
-        return token[:TOKEN_PREVIEW_LENGTH] + "..."
-    return token
-
 def _log_token(token: str) -> None:
-    token_log_mode = _resolve_token_log_mode()
-    if token_log_mode == TOKEN_LOG_MODE_FULL:
-        AUTH_LOGGER.info("delegated_token=%s", token)
-    elif token_log_mode == TOKEN_LOG_MODE_MASKED:
-        AUTH_LOGGER.info("delegated_token_preview=%s", _masked_token(token))
-
+    log_token_value(
+        AUTH_LOGGER,
+        token,
+        full_key="delegated_token",
+        preview_key="delegated_token_preview",
+    )
 
 def _token_cache_ttl_seconds() -> int:
     raw = os.getenv(TOKEN_VALIDATION_CACHE_TTL_ENV, str(DEFAULT_VALIDATION_CACHE_TTL_SECONDS)).strip()

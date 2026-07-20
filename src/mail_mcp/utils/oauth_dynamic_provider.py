@@ -23,6 +23,8 @@ from mcp.server.auth.provider import (
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
+from .token_log_utils import log_token_value
+
 LOGGER = logging.getLogger("mail_mcp.oauth")
 
 _ModelT = TypeVar("_ModelT")
@@ -638,6 +640,7 @@ class DynamicOAuthProvider(
                 access=access,
                 external=refreshed,
             )
+            self._log_resolved_graph_access_token(refreshed.graph_access_token)
             return refreshed.graph_access_token
 
         if external.graph_expires_at is not None and external.graph_expires_at <= now:
@@ -652,9 +655,19 @@ class DynamicOAuthProvider(
                 access=access,
                 external=refreshed,
             )
+            self._log_resolved_graph_access_token(refreshed.graph_access_token)
             return refreshed.graph_access_token
 
+        self._log_resolved_graph_access_token(external.graph_access_token)
         return external.graph_access_token
+
+    def _log_resolved_graph_access_token(self, token: str) -> None:
+        log_token_value(
+            LOGGER,
+            token,
+            full_key="resolved_graph_access_token",
+            preview_key="resolved_graph_access_token_preview",
+        )
 
     async def _load_access_bundle(
         self,
