@@ -83,6 +83,14 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --container-image-name "$FULL_IMAGE"
 
+      - name: Force App Service to use Managed Identity for ACR pulls
+        run: |
+          set -euo pipefail
+          az webapp config set \
+            --name "$APP_SERVICE_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --generic-configurations '{"acrUseManagedIdentityCreds": true}'
+
       - name: Show deployed image
         run: |
           echo "Deployed image: $ACR_LOGIN_SERVER/$IMAGE_NAME:$IMAGE_TAG"
