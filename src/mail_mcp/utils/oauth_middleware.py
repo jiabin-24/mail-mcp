@@ -19,6 +19,7 @@ DEFAULT_VALIDATION_CACHE_TTL_SECONDS = 300
 GRAPH_BASE_URL_ENV = "GRAPH_BASE_URL"
 GRAPH_DEFAULT_BASE_URL = "https://graph.microsoft.com/v1.0"
 INVALID_OR_EXPIRED_TOKEN_ERROR = "invalid or expired token"
+RESOLVED_GRAPH_TOKEN_STATE_KEY = "resolved_graph_access_token"
 
 def _extract_token(authorization: str) -> str:
     if authorization.lower().startswith("bearer "):
@@ -73,6 +74,8 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
         if resolve_error is not None:
             return resolve_error
 
+        self._store_resolved_token_in_request_state(request, resolved_token)
+
         if self._should_validate_graph_token(resolved_token, token_value):
             # 对传入 token 做有效性校验（缓存命中时不访问 Graph）。
             is_valid = await self._validate_token(token_value or "")
@@ -80,6 +83,15 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
                 return self._invalid_or_expired_response()
 
         return await call_next(request)
+
+    def _store_resolved_token_in_request_state(self, request, resolved_token: str | None) -> None:
+        if not resolved_token:
+            return
+        try:
+            setattr(request.state, RESOLVED_GRAPH_TOKEN_STATE_KEY, resolved_token)
+        except Exception:
+            # 请求上下文不可写时跳过，不影响后续 header 回退逻辑。
+            return
 
     async def _resolve_and_validate_delegated_token(
         self,

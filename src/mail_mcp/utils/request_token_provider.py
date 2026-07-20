@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Callable
 
+RESOLVED_GRAPH_TOKEN_STATE_KEY = "resolved_graph_access_token"
+
 
 class RequestTokenProvider:
     """Helpers for resolving bearer token from current MCP request context."""
@@ -29,6 +31,10 @@ class RequestTokenProvider:
         if request_obj is None:
             return None
 
+        resolved_token = RequestTokenProvider._resolve_token_from_request_state(request_obj)
+        if resolved_token:
+            return resolved_token
+
         headers = getattr(request_obj, "headers", None)
         if headers is None:
             return None
@@ -42,6 +48,18 @@ class RequestTokenProvider:
             return None
 
         return RequestTokenProvider.extract_bearer_token(str(authorization))
+
+    @staticmethod
+    def _resolve_token_from_request_state(request_obj) -> str | None:
+        state = getattr(request_obj, "state", None)
+        if state is None:
+            return None
+
+        token_value = getattr(state, RESOLVED_GRAPH_TOKEN_STATE_KEY, None)
+        if isinstance(token_value, str):
+            token_value = token_value.strip()
+            return token_value or None
+        return None
 
     @staticmethod
     def token_provider() -> str | None:
