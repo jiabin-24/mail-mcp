@@ -102,19 +102,16 @@ last_updated: 2026-07-20
 链接输出规则（Checklist）：
 
 * [ ] 优先复用 `webLink` / `fileUrl`
-* [ ] 邮件正文若涉及附件则默认生成 `HTML`，仅在用户明确要求纯文本时才生成 `Text`
+* [ ] 只在邮件正文涉及附件时生成 `HTML`，除非用户明确要求纯文本时才生成 `Text`
 * [ ] 只要正文是 `HTML`，所有邮件正文链接都必须使用 `<a>` 标签生成，不要输出 Markdown 链接
 * [ ] 草稿链接必须输出为 `<a href="{webLink}" target="_blank" rel="noopener noreferrer">{subject}</a>`
 * [ ] 会议链接必须输出为 `<a href="{eventWebLink}" target="_blank" rel="noopener noreferrer">{eventSubject}</a>`
 * [ ] 附件链接必须输出为 `<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`
-* [ ] 链接文案必须使用主题、会议标题或附件名，不能直接把 URL 作为可见文本
-* [ ] 非纯文本场景，禁止输出裸 URL、禁止输出 `[text](url)` 形式、禁止把 `<a ...>` 当普通文本展示
 
 正文生成要求：
 
 * 附件信息默认追加在正文末尾，且与正文内容之间保留空行
 * 如果已有附件区块，更新时应覆盖原附件区块，避免重复追加
-* HTML 正文中的附件区示例：`附件：<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`
 
 校验通过后，必须展示发送摘要并请求二次确认；仅在用户明确确认后发送。
 

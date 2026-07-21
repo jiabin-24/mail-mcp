@@ -97,12 +97,13 @@ class EmailStore(GraphStoreBase):
         return self._map_messages(payload.get("value", []), folder=req.folder, prefer_preview=True, mailbox_time_zone=mailbox_time_zone)
 
     def create_draft(self, req: MailboxComposeInput) -> dict[str, Any]:
+        content_type = self._body_content_type(req.body)
         payload = self._request(
             "POST",
             f"{self._mailbox_prefix}/messages",
             json={
                 "subject": req.subject,
-                "body": {"contentType": "Text", "content": req.body},
+                "body": {"contentType": content_type, "content": req.body},
                 "toRecipients": self._emails_to_recipients(req.to),
                 "ccRecipients": self._emails_to_recipients(req.cc or []),
                 "bccRecipients": self._emails_to_recipients(req.bcc or []),
@@ -150,8 +151,7 @@ class EmailStore(GraphStoreBase):
         if req.subject is not None:
             patch_payload["subject"] = req.subject
         if req.body is not None:
-            content_type = "HTML" if "<a" in req.body.lower() else "Text"
-            patch_payload["body"] = {"contentType": content_type, "content": req.body}
+            patch_payload["body"] = {"contentType": self._body_content_type(req.body), "content": req.body}
         if req.to is not None:
             patch_payload["toRecipients"] = self._emails_to_recipients(req.to)
         if req.cc is not None:
@@ -227,6 +227,9 @@ class EmailStore(GraphStoreBase):
 
     def _emails_to_recipients(self, emails: list[str]) -> list[dict[str, Any]]:
         return [{"emailAddress": {"address": email}} for email in emails if email.strip()]
+
+    def _body_content_type(self, body: str) -> str:
+        return "HTML" if "<a" in body.lower() else "Text"
 
     def _plain_text_to_html(self, text: str) -> str:
         safe = escape(text.strip())
