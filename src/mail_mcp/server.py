@@ -53,13 +53,6 @@ def _bootstrap_env() -> None:
 _bootstrap_env()
 configure_default_loggers()
 
-def _parse_mcp_scopes(raw: str | None) -> list[str]:
-    if raw is None:
-        return ["mail.mcp"]
-    return [scope.strip() for scope in raw.split(",") if scope.strip()]
-
-
-MCP_DEFAULT_SCOPES = _parse_mcp_scopes(os.getenv("MCP_DEFAULT_SCOPES"))
 TOKEN_PROVIDER = RequestTokenProvider.as_callable()
 EMAIL_STORE, CALENDAR_STORE, GRAPH_STORE = (EmailStore(token_provider=TOKEN_PROVIDER), CalendarStore(token_provider=TOKEN_PROVIDER), GraphStoreBase(token_provider=TOKEN_PROVIDER))
 EMAIL_SEND_QUEUE_STORE = EmailSendQueueStore(token_provider=TOKEN_PROVIDER)
@@ -83,12 +76,12 @@ if _oauth_config:
         resource_server_url=issuer_url,
         client_registration_options=ClientRegistrationOptions(
             enabled=True,
-            valid_scopes=(MCP_DEFAULT_SCOPES or None),
-            default_scopes=(MCP_DEFAULT_SCOPES or None),
+            valid_scopes=None,
+            default_scopes=None,
             client_secret_expiry_seconds=365 * 24 * 3600,
         ),
         revocation_options=RevocationOptions(enabled=True),
-        required_scopes=(MCP_DEFAULT_SCOPES or None),
+        required_scopes=None,
         service_documentation_url=(os.getenv("MCP_OAUTH_SERVICE_DOCUMENTATION_URL") or issuer_url),
     )
 
