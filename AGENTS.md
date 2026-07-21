@@ -102,7 +102,7 @@ last_updated: 2026-07-20
 链接输出规则（Checklist）：
 
 * [ ] 优先复用 `webLink` / `fileUrl`
-* [ ] 只在邮件正文涉及附件时生成 `HTML`，除非用户明确要求纯文本时才生成 `Text`
+* [ ] 邮件正文只在涉及附件时采用 `HTML` 格式，除非用户明确要求纯文本时才生成 `Text`
 * [ ] 只要正文是 `HTML`，所有邮件正文链接都必须使用 `<a>` 标签生成，不要输出 Markdown 链接
 * [ ] 草稿链接必须输出为 `<a href="{webLink}" target="_blank" rel="noopener noreferrer">{subject}</a>`
 * [ ] 会议链接必须输出为 `<a href="{eventWebLink}" target="_blank" rel="noopener noreferrer">{eventSubject}</a>`
