@@ -4,7 +4,7 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
-from ..stores.calendar_store import CalendarStore
+from ..stores.exchange_online.calendar_store import CalendarStore
 from ..schemas.request_models import (
     CalendarCreateEventInput,
     CalendarDeleteEventInput,

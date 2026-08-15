@@ -7,8 +7,8 @@ from ..schemas.request_models import (
     MailboxUpdateSendJobScheduleInput,
     validate_input,
 )
-from ..stores.email_store import EmailStore
-from ..stores.email_send_queue_store import EmailSendQueueStore
+from ..stores.exchange_online.email_store import EmailStore
+from ..stores.exchange_online.email_send_queue_store import EmailSendQueueStore
 from ..utils.datetime_utils import normalize_query_datetime_with_mailbox_timezone
 
 

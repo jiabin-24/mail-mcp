@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..stores.email_store import EmailStore
+from ..stores.exchange_online.email_store import EmailStore
 from ..schemas.request_models import (
     MailboxComposeInput,
     MailboxDraftIdInput,

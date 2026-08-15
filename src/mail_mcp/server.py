@@ -11,9 +11,9 @@ from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, Re
 from mcp.server.fastmcp import FastMCP
 from starlette.responses import JSONResponse
 
-from .stores.calendar_store import CalendarStore
-from .stores.email_store import EmailStore
-from .stores.email_send_queue_store import EmailSendQueueStore
+from .stores.exchange_online.calendar_store import CalendarStore
+from .stores.exchange_online.email_store import EmailStore
+from .stores.exchange_online.email_send_queue_store import EmailSendQueueStore
 from .stores.graph_store import GraphStoreBase
 from .stores.oauth_client_store import build_oauth_client_store_from_env
 from .stores.oauth_token_store import build_oauth_token_store_from_env

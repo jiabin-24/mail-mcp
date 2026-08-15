@@ -10,6 +10,7 @@ import httpx
 from cachetools import TTLCache
 from mail_mcp.utils.search_token_tools import expand_search_tokens
 
+from ..models import map_graph_calendar_event, map_graph_message
 from ..utils.token_log_utils import log_token_value
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -34,6 +35,118 @@ class GraphStoreBase:
     def _normalize_limit(self, limit: int) -> int:
         """将查询上限规范化到合理范围，避免超出 Graph 限制。"""
         return max(1, min(limit, 100))
+
+    def _folder_segment(self, folder: str | None) -> str:
+        """Normalize mailbox folder names to Graph folder paths."""
+        normalized = (folder or "").strip()
+        if not normalized:
+            return "inbox"
+
+        mapping = {
+            "inbox": "inbox",
+            "sent": "sentitems",
+            "sentitems": "sentitems",
+            "drafts": "drafts",
+            "archive": "archive",
+            "deleteditems": "deleteditems",
+            "deleted": "deleteditems",
+            "junk": "junkemail",
+            "junkemail": "junkemail",
+        }
+        lowered = normalized.lower()
+        if lowered in mapping:
+            return mapping[lowered]
+        return quote(normalized, safe="")
+
+    def _body_content_type(self, body: str | None) -> str:
+        """Detect whether a message body should be sent as HTML or plain text."""
+        text = (body or "").strip()
+        if not text:
+            return "Text"
+        if "<" in text and ">" in text:
+            return "HTML"
+        return "Text"
+
+    def _emails_to_recipients(self, emails: list[str] | None) -> list[dict[str, Any]]:
+        """Convert plain email addresses into Graph recipient payloads."""
+        recipients: list[dict[str, Any]] = []
+        for email in emails or []:
+            cleaned = str(email or "").strip()
+            if cleaned:
+                recipients.append({"emailAddress": {"address": cleaned}})
+        return recipients
+
+    def _emails_to_attendees(self, emails: list[str] | None) -> list[dict[str, Any]]:
+        """Convert plain email addresses into Graph attendee payloads."""
+        attendees: list[dict[str, Any]] = []
+        for email in emails or []:
+            cleaned = str(email or "").strip()
+            if cleaned:
+                attendees.append({
+                    "type": "required",
+                    "emailAddress": {"address": cleaned},
+                })
+        return attendees
+
+    def _plain_text_to_html(self, text: str | None) -> str:
+        """Escape plain text and convert line breaks to HTML breaks."""
+        content = str(text or "")
+        escaped = (
+            content.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        return escaped.replace("\r\n", "\n").replace("\n", "<br/>")
+
+    def _compose_online_meeting_body(self, description: str | None, existing_body_html: str | None) -> str:
+        """Compose HTML meeting body while preserving any existing meeting text."""
+        new_html = self._plain_text_to_html(description)
+        if not new_html.strip():
+            return existing_body_html or "<div></div>"
+
+        combined = f"<div>{new_html}</div>"
+        if (existing_body_html or "").strip():
+            return f"{combined}<br/>{existing_body_html}"
+        return combined
+
+    def _event_path(self, event_id: str, calendar_id: str | None = None) -> str:
+        """Build a Graph event path for a calendar or default mailbox calendar."""
+        encoded_event_id = quote(str(event_id or "").strip(), safe="")
+        if calendar_id:
+            return f"{self._mailbox_prefix}/calendars/{quote(str(calendar_id), safe='')}/events/{encoded_event_id}"
+        return f"{self._mailbox_prefix}/events/{encoded_event_id}"
+
+    def _map_messages(
+        self,
+        messages: list[dict[str, Any]] | None,
+        *,
+        folder: str | None = None,
+        prefer_preview: bool = False,
+        mailbox_time_zone: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Map Graph message payloads into the canonical response format."""
+        return [
+            map_graph_message(
+                message,
+                folder=folder,
+                prefer_preview=prefer_preview,
+                mailbox_time_zone=mailbox_time_zone,
+            )
+            for message in (messages or [])
+            if isinstance(message, dict)
+        ]
+
+    def _map_calendar_events(
+        self,
+        events: list[dict[str, Any]] | None,
+        mailbox_time_zone: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Map Graph calendar payloads into the canonical response format."""
+        return [
+            map_graph_calendar_event(event, mailbox_time_zone=mailbox_time_zone)
+            for event in (events or [])
+            if isinstance(event, dict)
+        ]
 
     def _cache_scope_key(self) -> str:
         """基于当前访问令牌生成缓存作用域，避免用户之间的数据串用。"""
