@@ -22,9 +22,8 @@ WINDOWS_TO_IANA_TIME_ZONES: dict[str, str] = {
     "Pacific Standard Time": "America/Los_Angeles",
 }
 
-# Fallback offsets are used only when ZoneInfo cannot be resolved (for example,
-# in minimal runtime images without tzdata). Keep this list limited to zones
-# with stable offsets and no DST ambiguity in typical enterprise usage.
+# 当 ZoneInfo 无法解析时才使用备用偏移量（例如缺少 tzdata 的极简运行时环境）。
+# 这里只保留那些偏移稳定且通常无 DST 歧义的时区，避免过度扩大覆盖范围。
 WINDOWS_TIME_ZONE_FIXED_OFFSET_MINUTES: dict[str, int] = {
     "China Standard Time": 8 * 60,
     "Tokyo Standard Time": 9 * 60,
@@ -44,6 +43,11 @@ MAIL_FILTER_TIME_LITERAL_REGEX = re.compile(
 
 
 def resolve_zone_info(time_zone: str | None) -> tzinfo | None:
+    """将 Microsoft Graph 返回的时区名称解析为 Python 的 tzinfo。
+
+    优先尝试直接使用 IANA 时区名称；若失败，则将常见的 Windows 时区名映射
+    到对应的 IANA 时区；最后在缺少 tzdata 的情况下，回退为固定偏移时区。
+    """
     tz_name = (time_zone or "").strip()
     if not tz_name:
         return None
@@ -64,25 +68,20 @@ def resolve_zone_info(time_zone: str | None) -> tzinfo | None:
         return timezone(timedelta(minutes=fixed_offset_minutes))
 
 
-def resolve_effective_time_zone(preferred: str | None, mailbox_time_zone: str | None, fallback: str = "UTC") -> str:
-    preferred_value = (preferred or "").strip()
-    if preferred_value:
-        return preferred_value
-    mailbox_value = (mailbox_time_zone or "").strip()
-    if mailbox_value:
-        return mailbox_value
-    return fallback
-
-
 def to_utc_iso_from_datetime(
     value: datetime,
     *,
     preferred_time_zone: str | None = None,
     mailbox_time_zone: str | None = None,
 ) -> str:
+    """将带时区或无时区的 datetime 转成 UTC ISO 8601 字符串。
+
+    若传入时间没有 tzinfo，则根据 preferred_time_zone / mailbox_time_zone
+    选择一个时区来解释该时间，再统一转换到 UTC。
+    """
     dt = value
     if dt.tzinfo is None:
-        effective_time_zone = resolve_effective_time_zone(preferred_time_zone, mailbox_time_zone)
+        effective_time_zone = (preferred_time_zone or mailbox_time_zone or "UTC").strip() or "UTC"
         zone = resolve_zone_info(effective_time_zone)
         if zone is None:
             raise ValueError(f"invalid time zone: {effective_time_zone}")
@@ -97,6 +96,11 @@ def to_utc_iso_from_text(
     preferred_time_zone: str | None = None,
     mailbox_time_zone: str | None = None,
 ) -> str:
+    """将 ISO 时间文本转换成 UTC 的 ISO 8601 字符串。
+
+    若字符串末尾为 Z，则视为 UTC；若无时区信息，则按 mailbox_time_zone
+    解释并转换为 UTC。 
+    """
     raw = (value or "").strip()
     if not raw:
         raise ValueError("datetime text is required")
@@ -115,10 +119,10 @@ def to_utc_iso_from_text(
 
 
 def normalize_query_datetime_with_mailbox_timezone(value: str, mailbox_time_zone: str | None) -> str:
-    """Normalize query datetime text.
+    """规范化查询中的日期时间文本。
 
-    If timezone info is missing, apply mailbox timezone and convert to UTC ISO (Z suffix).
-    If timezone info already exists, preserve the original value.
+    如果原值已经带有时区信息，则保留原值；如果没有时区信息，则使用邮箱时区
+    来解释该时间，再转换成 UTC ISO 8601（带 Z 后缀）的形式。 
     """
     raw = (value or "").strip()
     if not raw:
@@ -131,7 +135,11 @@ def normalize_query_datetime_with_mailbox_timezone(value: str, mailbox_time_zone
 
 
 def normalize_mail_filter_time_literals(filter_text: str, mailbox_time_zone: str | None) -> str:
-    """Normalize naive datetime literals in received/sent datetime filter expressions."""
+    """规范化 received/sent 过滤表达式中的时间字面量。
+
+    会在 Graph 查询过滤器中替换无时区的日期时间值，确保它们按邮箱时区解释
+    后再统一转换为 UTC，避免查询条件误差。
+    """
     raw = (filter_text or "").strip()
     if not raw:
         return raw

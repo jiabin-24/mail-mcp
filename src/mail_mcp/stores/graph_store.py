@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import httpx
 from cachetools import TTLCache
-from mail_mcp.tools.search_token_tools import expand_search_tokens
+from mail_mcp.utils.search_token_tools import expand_search_tokens
 
 from ..utils.token_log_utils import log_token_value
 
@@ -16,9 +16,10 @@ GRAPH_QUERY_SAFE = "()':,=-"
 LOGGER = logging.getLogger("mail_mcp")
 
 class GraphStoreBase:
-    """Shared Microsoft Graph client behavior for mailbox-backed stores."""
+    """封装 Microsoft Graph 通用访问逻辑，供邮件和日历等存储层复用。"""
 
     def __init__(self, token_provider: Callable[[], str | None]) -> None:
+        """初始化 Graph 客户端，并准备缓存与鉴权所需的上下文。"""
         self._token_provider = token_provider
         self._graph_base = os.getenv("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0")
         # 统一缓存 TTL（秒），<=0 表示禁用写入缓存。
@@ -31,9 +32,11 @@ class GraphStoreBase:
         return "/me"
 
     def _normalize_limit(self, limit: int) -> int:
+        """将查询上限规范化到合理范围，避免超出 Graph 限制。"""
         return max(1, min(limit, 100))
 
     def _cache_scope_key(self) -> str:
+        """基于当前访问令牌生成缓存作用域，避免用户之间的数据串用。"""
         token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
         if not token:
             return "anonymous"
@@ -48,6 +51,7 @@ class GraphStoreBase:
         headers: dict[str, str] | None = None,
         expect_json: bool = True,
     ) -> dict[str, Any]:
+        """向 Microsoft Graph 发送统一的 HTTP 请求，并附带访问令牌与标准头信息。"""
         token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
         if not token:
             raise ValueError(
@@ -86,6 +90,7 @@ class GraphStoreBase:
         return response.json()
 
     def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
+        """查询租户中的用户列表，可按关键字过滤并返回邮箱和 UPN 等字段。"""
         safe_limit = self._normalize_limit(limit)
         headers = {"ConsistencyLevel": "eventual"}
         base_query_prefix = (
@@ -136,6 +141,7 @@ class GraphStoreBase:
         ]
 
     def get_user_time_zone(self, fallback: str = "UTC") -> dict[str, str]:
+        """读取当前用户邮箱的时区配置；若未配置则返回 fallback。"""
         cache_key = f"{self._cache_scope_key()}:mailbox_time_zone"
         cached = self._cache.get(cache_key)
         if isinstance(cached, dict):
@@ -157,11 +163,13 @@ class GraphStoreBase:
         return {"time_zone": fallback, "source": "fallback"}
 
     def get_mailbox_time_zone_if_available(self) -> str | None:
+        """返回当前邮箱时区；如果未配置，则返回 None。"""
         time_zone_info = self.get_user_time_zone(fallback="")
         resolved = str(time_zone_info.get("time_zone", "") or "").strip()
         return resolved or None
 
     def resolve_current_user_upn(self) -> str:
+        """解析当前登录用户的邮箱或 UPN，用于后续邮件、日历等操作中的用户识别。"""
         cache_key = f"{self._cache_scope_key()}:current_user_upn"
         cached = self._cache.get(cache_key)
         if isinstance(cached, str) and cached:
@@ -181,6 +189,7 @@ class GraphStoreBase:
 
 
 def recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
+    """从 Graph 收件人列表中提取所有邮箱地址。"""
     result: list[str] = []
     for recipient in recipients:
         address = recipient_address(recipient)
@@ -190,5 +199,6 @@ def recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
 
 
 def recipient_address(recipient: dict[str, Any]) -> str:
+    """从单个收件人对象中提取邮箱地址字符串。"""
     email_address = recipient.get("emailAddress", {}) if isinstance(recipient, dict) else {}
     return str(email_address.get("address", "") or "")

@@ -18,6 +18,7 @@ from .stores.graph_store import GraphStoreBase
 from .stores.oauth_client_store import build_oauth_client_store_from_env
 from .stores.oauth_token_store import build_oauth_token_store_from_env
 from .tools.calendar_tools import register_calendar_tools
+from .tools.common_tools import register_common_tools
 from .tools.email_tools import register_email_tools
 from .tools.email_queue_tools import register_email_queue_tools
 from .utils.oauth_dynamic_provider import DynamicOAuthProvider, get_dynamic_oauth_config_from_env
@@ -145,6 +146,7 @@ _EXPOSE_AGENTS_MD = os.getenv("MCP_EXPOSE_AGENTS_MD", "false").lower() in {
 }
 
 register_calendar_tools(APP, CALENDAR_STORE)
+register_common_tools(APP, GRAPH_STORE)
 register_email_tools(APP, EMAIL_STORE)
 register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
 

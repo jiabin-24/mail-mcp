@@ -14,6 +14,7 @@ def _has_chinese(text: str) -> bool:
 
 
 def _get_pinyin_variants(token: str) -> list[str]:
+    """为中文 token 生成拼音全拼与首字母缩写，支持搜索条件扩展。"""
     if not _has_chinese(token):
         return []
 
@@ -33,6 +34,14 @@ def _get_pinyin_variants(token: str) -> list[str]:
 
 
 def expand_search_tokens(tokens: list[str], max_tokens: int = _MAX_EXPANDED_TOKENS) -> list[str]:
+    """将原始搜索词扩展为更适合过滤查询的候选 token。
+
+    作用包括：
+    - 保留原始词本身，确保关键词搜索不丢失；
+    - 对中文词生成拼音全拼和首字母变体，扩大命中范围；
+    - 统一小写并去重，避免查询膨胀和重复条件；
+    - 最终限制返回数量，防止过长的过滤表达式影响 Graph 查询性能。
+    """
     expanded: list[str] = []
     seen: set[str] = set()
 
