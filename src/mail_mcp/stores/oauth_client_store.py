@@ -5,6 +5,7 @@ from typing import Any
 
 from mcp.shared.auth import OAuthClientInformationFull
 
+from ..utils.validation_utils import require_str
 from .table_storage import AzureTableContext, AzureTableJsonKV, build_table_context_from_env
 
 
@@ -30,10 +31,11 @@ class AzureTableOAuthClientStore:
             return None
 
     def upsert_client(self, client: OAuthClientInformationFull) -> None:
+        client_id = require_str(client.client_id, name="client_id")
         payload: dict[str, Any] = client.model_dump(mode="json")
         self._kv.set_json(
             partition_key=self._PARTITION_KEY,
-            row_key=client.client_id,
+            row_key=client_id,
             payload=payload,
             payload_field="clientjson",
             expires_epoch=None,

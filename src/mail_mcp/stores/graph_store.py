@@ -25,7 +25,7 @@ class GraphStoreBase:
         # 统一缓存 TTL（秒），<=0 表示禁用写入缓存。
         self._cache_ttl = max(0, int(os.getenv("GRAPH_CACHE_TTL_SECONDS") or 300))
         # 进程内小缓存：减少重复查询当前用户时区与邮箱标识。
-        self._cache: TTLCache[str, Any] = TTLCache(maxsize=128, ttl=max(1, self._cache_ttl))
+        self._cache: TTLCache[Any, Any] = TTLCache(maxsize=128, ttl=max(1, self._cache_ttl))
 
     @property
     def _mailbox_prefix(self) -> str:

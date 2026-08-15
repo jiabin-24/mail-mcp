@@ -6,7 +6,7 @@ import os
 import secrets
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar, cast
 from urllib.parse import urlencode
 
 import httpx
@@ -24,6 +24,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from .token_log_utils import log_token_value
+from .validation_utils import require_str
 
 LOGGER = logging.getLogger("mail_mcp.oauth")
 
@@ -181,8 +182,9 @@ class DynamicOAuthProvider(
         return persisted
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        client_id = require_str(client_info.client_id, name="client_id")
         async with self._lock:
-            self._clients[client_info.client_id] = client_info
+            self._clients[client_id] = client_info
         self._call_registry(
             self._client_registry,
             "persist oauth client to registry",
@@ -193,8 +195,9 @@ class DynamicOAuthProvider(
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         state_id = secrets.token_urlsafe(24)
         now = time.time()
+        client_id = require_str(client.client_id, name="client_id")
         pending = PendingAuthorization(
-            client_id=client.client_id,
+            client_id=client_id,
             params=params,
             expires_at=now + self.state_ttl_seconds,
         )
@@ -290,16 +293,17 @@ class DynamicOAuthProvider(
         access_expires_at = now + self.access_token_ttl_seconds
         refresh_expires_at = now + self.refresh_token_ttl_seconds
 
+        client_id = require_str(client.client_id, name="client_id")
         access_token = AccessToken(
             token=access_token_value,
-            client_id=client.client_id,
+            client_id=client_id,
             scopes=authorization_code.scopes,
             expires_at=access_expires_at,
             resource=authorization_code.resource,
         )
         refresh_token = RefreshToken(
             token=refresh_token_value,
-            client_id=client.client_id,
+            client_id=client_id,
             scopes=authorization_code.scopes,
             expires_at=refresh_expires_at,
         )
@@ -397,16 +401,17 @@ class DynamicOAuthProvider(
         access_expires_at = now + self.access_token_ttl_seconds
         refresh_expires_at = now + self.refresh_token_ttl_seconds
 
+        client_id = require_str(client.client_id, name="client_id")
         access_token = AccessToken(
             token=access_token_value,
-            client_id=client.client_id,
+            client_id=client_id,
             scopes=scopes,
             expires_at=access_expires_at,
             resource=None,
         )
         new_refresh_token = RefreshToken(
             token=new_refresh_token_value,
-            client_id=client.client_id,
+            client_id=client_id,
             scopes=scopes,
             expires_at=refresh_expires_at,
         )
@@ -955,7 +960,8 @@ def _model_to_payload(value: Any) -> dict[str, Any]:
 
 def _model_from_payload(model_cls: type[_ModelT], payload: dict[str, Any]) -> _ModelT | None:
     try:
-        return model_cls.model_validate(payload)
+        validator = cast(Any, model_cls)
+        return validator.model_validate(payload)
     except Exception:
         return None
 
