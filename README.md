@@ -106,6 +106,34 @@ MAIL_MCP_BACKEND=graph
 MAIL_MCP_BACKEND=ews
 ```
 
+Exchange Server EWS 后端专用环境变量（仅在 `MAIL_MCP_BACKEND=ews` 时生效；此模式不再兼容用户名/密码认证）：
+
+```bash
+# 选择 EWS 后端
+MAIL_MCP_BACKEND=ews
+
+# Exchange Server EWS 终结点（例如 EWS 地址）
+EXCHANGE_SERVER_URL=https://exchange.example.com/EWS/Exchange.asmx
+
+# Entra ID / OAuth 2.0 认证信息
+EXCHANGE_SERVER_CLIENT_ID=<app-registration-client-id>
+EXCHANGE_SERVER_CLIENT_SECRET=<app-registration-client-secret>
+EXCHANGE_SERVER_TENANT_ID=<tenant-id>
+
+# 访问令牌兜底；优先使用当前请求中的 Authorization: Bearer token
+EXCHANGE_SERVER_ACCESS_TOKEN=<bearer-access-token>
+
+# 可选：Mailbox 时区，默认 UTC
+EXCHANGE_SERVER_TIME_ZONE=UTC
+```
+
+注意：
+
+- 该模式已改为 bearer token 认证，不再接受 `EXCHANGE_SERVER_USERNAME` / `EXCHANGE_SERVER_PASSWORD`。
+- 访问令牌优先来源为当前请求中的 `Authorization: Bearer <token>`，其次是 `EXCHANGE_SERVER_ACCESS_TOKEN`。
+- EWS 仅从当前登录用户的 bearer token 中解析邮箱，不支持指定邮箱/共享邮箱。
+- `EXCHANGE_SERVER_URL` 必须指向实际的 EWS/Exchange 端点，不要只填域名。
+
 ### 2.1.1 配置分层（推荐：非敏感入库，敏感留在 App Service）
 
 服务启动时按以下优先级加载配置（高 -> 低）：
@@ -157,240 +185,71 @@ Azure Table 所需 RBAC（Service Principal）：
 
 当前实现固定使用 `/me` 路由访问 Outlook 邮箱。
 
-### 2.1.1 OAuth 2.0 Dynamic discovery（新增）
+### 2.1.1 OAuth 2.0 Dynamic discovery
 
-服务已支持 MCP OAuth 发现与动态客户端注册（DCR）。
+服务支持两种接入模式：
 
-当 `MCP_OAUTH_DYNAMIC_DISCOVERY_ENABLED=true` 且以下环境变量配置完整时，服务会自动启用：
+- 默认兼容模式：客户端直接发送 `Authorization: Bearer <Graph token>`
+- DCR 模式：当 `MCP_OAUTH_DYNAMIC_DISCOVERY_ENABLED=true` 且 `MCP_PUBLIC_BASE_URL` / `MCP_OAUTH_TENANT_ID` / `MCP_OAUTH_CLIENT_ID` / `MCP_OAUTH_CLIENT_SECRET` 完整时，服务会自动暴露 OAuth 元数据与回调端点
 
-- `MCP_PUBLIC_BASE_URL`（例如 `https://<app-name>.azurewebsites.net`）
-- `MCP_OAUTH_ISSUER_URL`（可选，默认同 `MCP_PUBLIC_BASE_URL`）
-- `MCP_OAUTH_CALLBACK_URL`（可选，默认 `${issuer}/oauth/callback`）
-- `MCP_OAUTH_TENANT_ID`
-- `MCP_OAUTH_CLIENT_ID`
-- `MCP_OAUTH_CLIENT_SECRET`
-- `MCP_OAUTH_ENTRA_SCOPES`（可选）
-
-启用后会暴露以下端点：
+启用 DCR 后会提供：
 
 - `/.well-known/oauth-authorization-server`
 - `/.well-known/oauth-protected-resource`
-- `/register`（动态客户端注册）
-- `/authorize`
-- `/token`
-- `/revoke`
-- `/oauth/callback`（与 Entra ID 交互的回调）
+- `/register` / `/authorize` / `/token` / `/revoke`
+- `/oauth/callback`
 
-OAuth 动态客户端注册持久化（防止重启后 client_id 丢失）：
+运行状态会写入 Azure Table：
 
-- 服务会优先将 DCR 注册得到的客户端信息写入 Azure Table，并在 `/authorize` 时回查
-- 仅复用现有 Azure Table 配置：`AZURE_STORAGE_ACCOUNT_NAME` + `AZURE_TENANT_ID` + `AZURE_CLIENT_ID` + `AZURE_CLIENT_SECRET`
-- OAuth 客户端注册信息写入固定表名：`OAuthClientRegistry`
-- 若上述 `AZURE_*` 配置不完整，服务会回退为进程内存模式（重启后 DCR client_id 仍会失效）
+- `OAuthClientRegistry`：客户端注册信息
+- `OAuthTokenRegistry`：state / code / token / Graph token 映射
 
-OAuth token/state 持久化（防止重启后 token 失效）：
+注意：
 
-- 服务会将 OAuth 运行态信息写入 Azure Table，包括：pending state、authorization code、MCP access token、MCP refresh token 以及 Graph 委托 token 映射
-- 默认表名：`OAuthTokenRegistry`
-- 可通过 `MCP_OAUTH_TOKEN_TABLE_NAME` 覆盖表名
-- 若 Azure Table 配置不完整，服务回退为进程内存模式（重启后既有 token 会失效，需要重新授权）
+- MCP 访问令牌由本服务签发并校验
+- 实际调用 Graph 时使用登录过程中获取的用户委托 token
+- 若未启用 DCR，服务保持兼容模式，直接接收 `Authorization: Bearer <Graph token>`
 
-说明：
+Token 权限至少满足以下之一：
 
-- MCP 访问令牌由本服务签发并校验。
-- 实际调用 Microsoft Graph 使用的是服务在 OAuth 登录过程中换取的用户委托令牌。
-- 若未启用 Dynamic discovery 配置，服务保持兼容模式（直接接收 `Authorization: Bearer <Graph token>`）。
-
-鉴权说明：
-
-- `/mcp` 调用必须携带 `Authorization: Bearer <token>`
-- 在直传 Graph token 模式下，服务会通过 Graph `GET /me` 校验 token 是否有效，校验失败返回 `401`
-- `/` 与 `/healthz` 仍允许匿名访问（用于健康检查）
-
-Token 至少需要这些 Graph 权限之一（按你调用场景）：
-
-- 读取邮件：`Mail.Read`
-- 写草稿/发送：`Mail.ReadWrite`, `Mail.Send`
-- 读取日历：`Calendars.Read`
-- 创建/修改日历：`Calendars.ReadWrite`
+- `Mail.Read` / `Mail.ReadWrite` / `Mail.Send`
+- `Calendars.Read` / `Calendars.ReadWrite`
+- `MailboxSettings.Read`
 
 默认地址：
+
 - Host: `127.0.0.1`
 - Port: `80`
-- MCP Path: `/mcp`
-- 后端 URL: `http://127.0.0.1:80/mcp`
+- Path: `/mcp`
 
-你也可以通过环境变量覆盖：
+### 2.2 反向代理与 HTTPS
 
-Windows CMD:
+建议把 `mail-mcp` 仅暴露到内网 HTTP，并由 Nginx/Caddy 负责 443 TLS 终结。核心思路是：
 
-```cmd
-set MCP_HOST=0.0.0.0
-set MCP_PORT=9000
-set MCP_PATH=/mcp
-mail-mcp
-```
+- 后端监听 `127.0.0.1:80`
+- 反向代理转发 `/mcp` 到后端
+- 对外仅提供 HTTPS 地址，例如 `https://mcp.example.com/mcp`
 
-Windows PowerShell:
+### 2.3 定时发送
 
-```powershell
-$env:MCP_HOST = "0.0.0.0"
-$env:MCP_PORT = "80"
-$env:MCP_PATH = "/mcp"
-mail-mcp
-```
-
-### 2.2 通过反向代理提供 HTTPS（推荐）
-
-思路：
-- `mail-mcp` 只监听内网 HTTP（如 `127.0.0.1:80`）
-- Nginx/Caddy 对外暴露 443，负责证书和 TLS
-
-Nginx 示例：
-
-```nginx
-server {
-  listen 443 ssl;
-  server_name mcp.example.com;
-
-  ssl_certificate     /etc/letsencrypt/live/mcp.example.com/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/mcp.example.com/privkey.pem;
-
-  location ~ ^/mcp(/.*)?$ {
-    proxy_pass http://127.0.0.1:80/mcp$1;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  }
-}
-```
-
-> 对外连接地址示例：`https://mcp.example.com/mcp`
-
-### 2.3 定时任务批量触发发送（HTTP GET）
-
-服务提供一个 HTTP GET 端点用于触发批量发送：
+服务提供一个批量发送入口：
 
 - `GET /jobs/dispatch`
 
-行为说明：
+它会扫描 Azure Table `EmailSendQueue` 中已到期的 `pending` / `scheduled` 任务，并用 Service Principal 调用 Graph 发送对应草稿。成功写入 `sent`，失败写入 `failed` 和 `lasterror`。
 
-- 查询 Azure Table `EmailSendQueue` 中状态为 `pending` 或 `scheduled` 的任务
-- 仅处理已到计划发送时间的任务（`schedulesendtime <= 当前 UTC`），未到期任务跳过
-- 使用 Service Principal 调用 Graph 发送对应草稿（`/users/{userupn}/messages/{draftId}/send`）
-- 成功任务更新为 `sent` 并写入 `senttime`
-- 失败任务更新为 `failed` 并写入 `lasterror`
+## 4. 集成说明
 
-## 3. 已提供的工具（Tools）
+- 本服务通过 `/mcp` 暴露 MCP 工具
+- `/mcp` 请求必须带 `Authorization: Bearer <token>`
+- 对于 Copilot Studio，可使用 `OAuth 2.0 -> Manual` 方式接入
+- 建议使用独立 Entra 应用注册进行隔离，便于审计、权限控制和密钥轮换
+- 最小推荐 scope：`offline_access openid profile Mail.Read Mail.ReadWrite Mail.Send Calendars.Read Calendars.ReadWrite MailboxSettings.Read`
 
-### 3.1 基础与健康检查
+## 5. 约束与注意事项
 
-- `ping()`
-  - 健康检查
-- `mailbox_get_agents_md()`（仅当 `MCP_EXPOSE_AGENTS_MD=true` 时注册）
-  - 返回仓库根目录 `AGENTS.md` 内容，便于 MCP 客户端读取 Agent 规则
-
-### 3.2 邮件读取与检索
-
-- `mailbox_list_folders()`
-  - 列出文件夹（`inbox` / `drafts` / `sent`）
-- `mailbox_list_messages(folder="inbox", limit=20)`
-  - 列出邮件摘要
-- `mailbox_get_message(message_id)`
-  - 按 ID 获取邮件详情
-- `mailbox_search(search=None, filter=None, folder="inbox", limit=20)`
-  - 透传 Graph `$search` / `$filter` 查询邮件
-
-### 3.3 草稿与发送
-
-- `mailbox_compose(to, subject, body, cc=None, bcc=None)`
-  - 生成草稿
-- `mailbox_reply_compose(message_id, body)`
-  - 基于原邮件生成回复草稿（自动保留历史上下文引用）
-- `mailbox_update_draft(draft_id, to=None, subject=None, body=None, cc=None, bcc=None)`
-  - 修改现有草稿（支持更新收件人、主题、正文、抄送、密送）
-- `mailbox_send_draft(draft_id)`
-  - 发送草稿并移到 `sent`
-- `mailbox_revoke_draft(draft_id)`
-  - 撤销草稿（删除草稿）
-
-### 3.4 日历事件
-
-- `calendar_list_events(start=None, end=None, search=None, limit=20)`
-  - 查询日历事件（可选时间范围；若不传时间范围，默认返回未来 30 天）
-- `calendar_get_event(event_id, calendar_id=None)`
-  - 按 ID 读取单个日历事件详情（可选指定日历）
-- `calendar_create_event(subject, start, end, attendees=None, description=None, location=None, is_all_day=False, time_zone=None, calendar_id=None)`
-  - 创建日历事件（支持时间、参会人、描述、地点、全天事件、时区，可选指定日历；未指定 `time_zone` 时默认使用当前用户时区）
-- `calendar_update_event(event_id, subject=None, start=None, end=None, attendees=None, description=None, location=None, is_all_day=None, time_zone=None, calendar_id=None)`
-  - 更新日历事件（支持改时间、参会人、描述、地点、全天设置等；未指定 `time_zone` 时默认使用当前用户时区）
-- `calendar_delete_event(event_id, calendar_id=None)`
-  - 删除日历事件
-- `calendar_respond_invitation(event_id, response, comment=None, send_response=True, calendar_id=None)`
-  - 响应会议邀请（`accept` / `decline` / `tentative`）
-
-### 3.5 用户与租户信息
-
-- `mailbox_list_tenant_users(search=None, limit=20)`
-  - 查询租户内用户与邮箱（`displayName` / `mail` / `userPrincipalName`）
-- `mailbox_get_user_time_zone()`
-  - 获取当前用户邮箱时区（优先返回 `mailboxSettings.timeZone`，失败时回退 `UTC`）
-
-### 3.6 定时发送队列
-
-- `mailbox_create_email_draft_send_job(draft_email_id, schedule_send_time, subject=None, status="scheduled", sent_time=None)`
-  - 往 Azure Table `EmailSendQueue` 插入定时发送任务（`draftemailid`、`schedulesendtime`、`status`、`senttime`、`subject`、`userupn`）
-  - `schedule_send_time` 需传带时区偏移的 ISO 8601 时间（例如 `2026-07-05T06:00:00Z` 或 `2026-07-05T14:00:00+08:00`），服务端会统一转换为 UTC 后入库
-
-## 4. 基本操作方法（开发流程）
-
-1. 启动 MCP 服务（`mail-mcp`）
-2. 确保 MCP Host 调用时携带可用的 Graph Bearer Token，或设置 `OUTLOOK_ACCESS_TOKEN`
-3. 在 MCP Host 中连接该服务
-  - 本地直连：`http://127.0.0.1:8000/mcp`
-  - 经反向代理：`https://mcp.example.com/mcp`
-4. 调用 `mailbox_list_folders` 查看目录
-5. 调用 `mailbox_list_messages` 查看 `inbox`
-6. 调用 `mailbox_get_message` 查看指定邮件正文
-7. 调用 `mailbox_compose` 写邮件草稿
-8. 回复场景优先调用 `mailbox_reply_compose`（可保留会话上下文）
-9. 调用 `mailbox_update_draft` 可修改已创建草稿
-10. 调用 `mailbox_revoke_draft` 可撤销（删除）草稿
-11. 调用 `mailbox_send_draft` 完成发送
-
-## 5. Copilot Studio 接入使用
-
-在 Copilot Studio 添加 MCP Server 时，建议使用 `OAuth 2.0 -> Manual`。
-
-### 5.1 在 Copilot Studio 中添加 MCP Server
-
-1. 打开 Agent 的 Tools，选择 Add a Model Context Protocol server。
-2. 填写基础信息：
-  - Server name：自定义名称（例如 `Mail MCP`）
-  - Server description：服务说明
-  - Server URL：你的 MCP 对外可访问地址（例如 `https://mcp.example.com/mcp`）
-3. Authentication 选择 `OAuth 2.0`。
-4. Type 选择 `Manual`。
-
-### 5.2 OAuth 2.0 (Manual) 关键字段
-
-- Client ID：填写 Entra 应用的 Service Principal 对应的应用（客户端）ID
-- Client secret：填写该应用的密钥
-- Redirect URL：填写 Copilot Studio 给出的回调地址，并确保在 Entra 应用中已配置相同 Redirect URI
-- Authorization URL：`https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/authorize`
-- Token URL：`https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/token`
-
-注意：`{tenant-id}` 必须使用实际租户 ID（GUID）或明确租户域，不要使用 `common`。
-
-### 5.3 建议的权限与 Scope
-
-- Scope 建议至少包含：`offline_access openid profile User.ReadBasic.All Mail.Read Mail.ReadWrite Mail.Send Calendars.Read Calendars.ReadWrite MailboxSettings.Read`
-- 如果只读场景，可仅保留 `Mail.Read`
-- 这些权限需在 Entra 应用中完成授权（必要时管理员同意）
-
-### 5.4 连通性与安全建议
-
-- MCP Server URL 必须是 Copilot Studio 可访问的 HTTPS 公网地址
-- 如果服务部署在内网，请通过反向代理暴露 HTTPS 入口
-- 建议使用独立应用注册给该 MCP 服务，便于审计和密钥轮换
+- Graph 默认后端：`MAIL_MCP_BACKEND=graph`
+- EWS 后端仅在 `MAIL_MCP_BACKEND=ews` 时启用，并且仅使用 bearer token，不兼容用户名/密码
+- EWS 只从当前登录用户的 bearer token 中解析邮箱，不支持指定邮箱或共享邮箱
+- `EXCHANGE_SERVER_URL` 必须指向真实 EWS 端点，不要只填域名
+- `OUTLOOK_ACCESS_TOKEN` 仅用于调试兜底；生产环境应优先使用请求头中的 token

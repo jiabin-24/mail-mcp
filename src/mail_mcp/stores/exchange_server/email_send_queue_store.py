@@ -19,10 +19,10 @@ class EmailSendQueueStore(EmailSendQueueStoreBase, ExchangeServerStoreBase):
         EmailSendQueueStoreBase.__init__(self, token_provider or (lambda: None), table_name=os.getenv("AZURE_STORAGE_TABLE_NAME"))
 
     def _resolve_user_upn(self) -> str:
-        mailbox = (self._mailbox or "").strip()
+        mailbox = self._resolve_current_mailbox().strip()
         if mailbox:
             return mailbox
-        raise ValueError("EXCHANGE_SERVER_MAILBOX is required for EWS queue operations")
+        raise ValueError("The current bearer token does not expose a mailbox identity for EWS queue operations")
 
     def _send_draft_for_job(self, *, user_upn: str, draft_email_id: str) -> None:
         _ = user_upn, draft_email_id

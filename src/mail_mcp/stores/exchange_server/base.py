@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
+import json
 import os
 from datetime import UTC, datetime
 from typing import Any, Callable
 
 from exchangelib import Account, Configuration, DELEGATE
-from exchangelib.credentials import Credentials
+from exchangelib.credentials import OAuth2Credentials
 
 
 class ExchangeServerStoreBase:
@@ -15,45 +17,60 @@ class ExchangeServerStoreBase:
         self._token_provider = token_provider
         raw_server_url = (os.getenv("EXCHANGE_SERVER_URL") or "").strip()
         self._server_url = raw_server_url.removeprefix("https://").removeprefix("http://").rstrip("/")
-        self._username = (os.getenv("EXCHANGE_SERVER_USERNAME") or "").strip()
-        self._password = (os.getenv("EXCHANGE_SERVER_PASSWORD") or "").strip()
-        self._domain = (os.getenv("EXCHANGE_SERVER_DOMAIN") or "").strip()
-        self._mailbox = (os.getenv("EXCHANGE_SERVER_MAILBOX") or self._username or "").strip()
-        configured_auth = (os.getenv("EXCHANGE_SERVER_AUTH_TYPE") or "NTLM").strip()
-        self._auth_type = self._normalize_auth_type(configured_auth)
+        self._client_id = (os.getenv("EXCHANGE_SERVER_CLIENT_ID") or "").strip()
+        self._client_secret = (os.getenv("EXCHANGE_SERVER_CLIENT_SECRET") or "").strip()
+        self._tenant_id = (os.getenv("EXCHANGE_SERVER_TENANT_ID") or "").strip()
+        self._access_token = (os.getenv("EXCHANGE_SERVER_ACCESS_TOKEN") or "").strip()
         self._time_zone = (os.getenv("EXCHANGE_SERVER_TIME_ZONE") or "UTC").strip()
         self._account: Account | None = None
 
-    @staticmethod
-    def _normalize_auth_type(value: str) -> str:
-        normalized = (value or "NTLM").strip()
-        lowered = normalized.lower()
-        if lowered in {"ntlm", "kerberos"}:
-            return "NTLM"
-        if lowered in {"basic", "basic_auth"}:
-            return "basic"
-        if lowered in {"oauth", "oauth2", "oauth 2.0"}:
-            return "OAuth 2.0"
-        if lowercase := lowered.replace(" ", ""):
-            if lowercase in {"noauthentication", "noauthentication"}:
-                return "no authentication"
-        return normalized
-
     def _credentials(self):
-        token = self._token_provider() if self._token_provider else None
-        if token and self._server_url and self._mailbox:
+        token = self._token_provider() if self._token_provider else self._access_token or None
+        if not token:
             raise ValueError(
-                "OAuth bearer token-based Exchange Server auth is not configured in this EWS adapter; "
-                "set EXCHANGE_SERVER_USERNAME / EXCHANGE_SERVER_PASSWORD or EXCHANGE_SERVER_AUTH_TYPE."
+                "Exchange Server EWS requires a bearer access token. "
+                "Provide Authorization: Bearer <token> or set EXCHANGE_SERVER_ACCESS_TOKEN."
             )
-        if not self._username or not self._password:
+        if not self._client_id or not self._client_secret:
             raise ValueError(
-                "Exchange Server EWS requires EXCHANGE_SERVER_USERNAME and EXCHANGE_SERVER_PASSWORD."
+                "Exchange Server EWS bearer auth requires EXCHANGE_SERVER_CLIENT_ID and "
+                "EXCHANGE_SERVER_CLIENT_SECRET."
             )
 
-        if self._domain:
-            return Credentials(username=f"{self._domain}\\{self._username}", password=self._password)
-        return Credentials(username=self._username, password=self._password)
+        return OAuth2Credentials(
+            client_id=self._client_id,
+            client_secret=self._client_secret,
+            tenant_id=self._tenant_id or None,
+            access_token=token,
+        )
+
+    def _resolve_current_mailbox(self) -> str:
+        token = self._token_provider() if self._token_provider else self._access_token or None
+        if not token:
+            return ""
+
+        parts = token.split(".")
+        if len(parts) < 2:
+            return ""
+
+        payload_part = parts[1]
+        padding = "=" * (-len(payload_part) % 4)
+        try:
+            decoded = base64.urlsafe_b64decode(payload_part + padding)
+            payload = json.loads(decoded.decode("utf-8"))
+        except Exception:
+            return ""
+
+        if not isinstance(payload, dict):
+            return ""
+
+        mailbox = (
+            str(payload.get("preferred_username", "") or "").strip().lower()
+            or str(payload.get("upn", "") or "").strip().lower()
+            or str(payload.get("email", "") or "").strip().lower()
+            or str(payload.get("mail", "") or "").strip().lower()
+        )
+        return mailbox
 
     def _build_account(self) -> Account:
         if self._account is not None:
@@ -64,14 +81,19 @@ class ExchangeServerStoreBase:
                 "EXCHANGE_SERVER_URL is required when using Exchange Server EWS mode."
             )
 
+        mailbox = self._resolve_current_mailbox().strip()
+        if not mailbox:
+            raise ValueError(
+                "The current bearer token does not expose a mailbox identity for Exchange Server EWS."
+            )
+
         creds = self._credentials()
         config = Configuration(
             server=self._server_url,
             credentials=creds,
-            auth_type=self._auth_type,
         )
         account = Account(
-            primary_smtp_address=self._mailbox or self._username,
+            primary_smtp_address=mailbox,
             config=config,
             autodiscover=False,
             access_type=DELEGATE,
