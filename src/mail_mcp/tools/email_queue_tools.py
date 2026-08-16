@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from ..schemas.request_models import (
     MailboxCreateSendJobInput,
     MailboxListSendJobsInput,

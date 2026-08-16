@@ -256,6 +256,12 @@ def _ensure_table_exists(table_client: TableClient) -> None:
         table_client.create_table()
     except ResourceExistsError:
         return
+    except Exception:
+        # Some Azure identities are allowed to read/write an existing table but not
+        # to create it. Do not fail the application startup in that case; the
+        # client remains usable for existing tables and the real operations will
+        # surface only when they are actually attempted.
+        return
 
 
 def _dumps_json(value: dict[str, Any]) -> str:
