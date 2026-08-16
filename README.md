@@ -90,10 +90,21 @@ az acr repository show-tags \
 
 可选环境变量：
 
+- `MAIL_MCP_BACKEND`（默认 `graph`，可选 `graph` / `ews`；决定使用 Microsoft Graph 还是 Exchange Server EWS）
 - `GRAPH_BASE_URL`（默认 `https://graph.microsoft.com/v1.0`）
 - `DELEGATED_TOKEN_LOG_MODE`（默认 `masked`，可选 `masked` / `full` / `none`）
 - `DELEGATED_TOKEN_CACHE_TTL_SECONDS`（默认 `300`，token 校验结果缓存秒数）
 - `MCP_EXPOSE_AGENTS_MD`（默认 `false`，设置为 `true` 后对外暴露 `mailbox_get_agents_md()` 工具，返回仓库根目录 `AGENTS.md` 内容）
+
+后端切换示例：
+
+```bash
+# 使用 Microsoft Graph（默认）
+MAIL_MCP_BACKEND=graph
+
+# 使用 Exchange Server EWS
+MAIL_MCP_BACKEND=ews
+```
 
 ### 2.1.1 配置分层（推荐：非敏感入库，敏感留在 App Service）
 
@@ -111,6 +122,7 @@ az acr repository show-tags \
 建议放入 `.env.prod` 的示例（非敏感）：
 
 - `MCP_HOST` / `MCP_PORT` / `MCP_PATH`
+- `MAIL_MCP_BACKEND`（`graph` 或 `ews`）
 - `GRAPH_BASE_URL`
 - `DELEGATED_TOKEN_LOG_MODE`
 - `DELEGATED_TOKEN_CACHE_TTL_SECONDS`

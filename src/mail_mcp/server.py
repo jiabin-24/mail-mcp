@@ -3,12 +3,14 @@ import os
 import threading
 import time
 from pathlib import Path
+from typing import cast
 
-from dotenv import dotenv_values
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
+from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 
+from .environment_bootstrap import EnvironmentBootstrapper
 from .stores.exchange_online.calendar_store import CalendarStore
 from .stores.exchange_online.email_store import EmailStore
 from .stores.exchange_online.email_send_queue_store import EmailSendQueueStore
@@ -27,40 +29,47 @@ from .utils.oauth_middleware import OAuthTokenLogMiddleware
 _ROOT_DIR = Path(__file__).resolve().parents[2]
 LOGGER = logging.getLogger("mail_mcp")
 
-def _load_env_file(path: Path) -> None:
-    if not path.exists():
-        return
 
-    for key, value in dotenv_values(path).items():
-        if value is None:
-            continue
-        # Keep process-level env vars (for App Service / secret settings) as highest priority.
-        os.environ.setdefault(key, value)
+def _build_store_backend(token_provider):
+    # 选择邮件后端：默认使用 Microsoft Graph，亦支持 Exchange Server EWS。
+    # MAIL_MCP_BACKEND 仅允许取值 "graph" 或 "ews"，用于在启动时切换实现。
+    backend = (os.getenv("MAIL_MCP_BACKEND") or "graph").strip().lower()
+    LOGGER.info("mail backend selected: %s", backend)
 
-def _bootstrap_env() -> None:
-    app_env = os.getenv("APP_ENV", "").strip().lower()
-    env_files: list[Path] = [_ROOT_DIR / ".env"]
+    if backend == "ews":
+        from .stores.exchange_server.calendar_store import CalendarStore as EwsCalendarStore
+        from .stores.exchange_server.email_send_queue_store import EmailSendQueueStore as EwsEmailSendQueueStore
+        from .stores.exchange_server.email_store import EmailStore as EwsEmailStore
+        return (
+            cast(EmailStore, EwsEmailStore(token_provider=token_provider)),
+            cast(CalendarStore, EwsCalendarStore(token_provider=token_provider)),
+            cast(EmailSendQueueStore, EwsEmailSendQueueStore(token_provider=token_provider)),
+        )
 
-    if app_env:
-        env_files.append(_ROOT_DIR / f".env.{app_env}")
-    else:
-        env_files.append(_ROOT_DIR / ".env.prod")
+    from .stores.exchange_online.calendar_store import CalendarStore as GraphCalendarStore
+    from .stores.exchange_online.email_send_queue_store import EmailSendQueueStore as GraphEmailSendQueueStore
+    from .stores.exchange_online.email_store import EmailStore as GraphEmailStore
+    return (
+        cast(EmailStore, GraphEmailStore(token_provider=token_provider)),
+        cast(CalendarStore, GraphCalendarStore(token_provider=token_provider)),
+        cast(EmailSendQueueStore, GraphEmailSendQueueStore(token_provider=token_provider)),
+    )
 
-    for env_file in env_files:
-        _load_env_file(env_file)
 
-_bootstrap_env()
+EnvironmentBootstrapper(_ROOT_DIR).bootstrap()
 configure_default_loggers()
 
+# 统一构造 token provider 与后端存储实例，供邮件/日历/队列工具共用。
 TOKEN_PROVIDER = RequestTokenProvider.as_callable()
-EMAIL_STORE, CALENDAR_STORE, GRAPH_STORE = (EmailStore(token_provider=TOKEN_PROVIDER), CalendarStore(token_provider=TOKEN_PROVIDER), GraphStoreBase(token_provider=TOKEN_PROVIDER))
-EMAIL_SEND_QUEUE_STORE = EmailSendQueueStore(token_provider=TOKEN_PROVIDER)
+EMAIL_STORE, CALENDAR_STORE, EMAIL_SEND_QUEUE_STORE = _build_store_backend(TOKEN_PROVIDER)
+GRAPH_STORE = GraphStoreBase(token_provider=TOKEN_PROVIDER)
 
 _oauth_provider: DynamicOAuthProvider | None = None
 _auth_settings: AuthSettings | None = None
 _oauth_client_store = None
 _oauth_token_store = None
 _oauth_config = get_dynamic_oauth_config_from_env()
+# 仅当启用了动态 OAuth 配置时，才注册 OAuth 客户端/令牌存储与鉴权服务。
 if _oauth_config:
     _oauth_client_store = build_oauth_client_store_from_env()
     _oauth_token_store = build_oauth_token_store_from_env()
@@ -81,7 +90,7 @@ if _oauth_config:
         ),
         revocation_options=RevocationOptions(enabled=True),
         required_scopes=None,
-        service_documentation_url=(os.getenv("MCP_OAUTH_SERVICE_DOCUMENTATION_URL") or issuer_url),
+        service_documentation_url=cast(AnyHttpUrl, os.getenv("MCP_OAUTH_SERVICE_DOCUMENTATION_URL") or issuer_url),
     )
 
 
@@ -135,13 +144,10 @@ APP = FastMCP(
     auth=_auth_settings,
 )
 
+# 运行时对外暴露的 MCP 工具入口，后续按具体存储实现注册邮件、日历和队列能力。
+
 _AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"
-_EXPOSE_AGENTS_MD = os.getenv("MCP_EXPOSE_AGENTS_MD", "false").lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-}
+_EXPOSE_AGENTS_MD = os.getenv("MCP_EXPOSE_AGENTS_MD", "false").strip().lower() == "true"
 
 register_calendar_tools(APP, CALENDAR_STORE)
 register_common_tools(APP, GRAPH_STORE)
@@ -189,13 +195,15 @@ def ping() -> dict[str, str]:
 
 
 if _oauth_provider is not None:
+    oauth_provider = _oauth_provider
 
     @APP.custom_route("/oauth/callback", methods=["GET"])
     async def oauth_callback(request):
         params = dict(request.query_params.items())
-        return await _oauth_provider.build_callback_redirect(params)
+        return await oauth_provider.build_callback_redirect(params)
 
 def _build_asgi_app():
+    # 通过 FastMCP 生成 ASGI app，并挂接额外的健康检查和任务调度入口。
     starlette_app = APP.streamable_http_app()
 
     def healthz(_request):
