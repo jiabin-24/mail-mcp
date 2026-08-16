@@ -1,49 +1,29 @@
 from __future__ import annotations
 
-from typing import Any
+import os
+from typing import Callable
 
-from ...schemas.request_models import MailboxCreateSendJobInput, MailboxUpdateSendJobScheduleInput
+from ..email_send_queue_store import EmailSendQueueStoreBase
 from .base import ExchangeServerStoreBase
 
 
-class EmailSendQueueStore(ExchangeServerStoreBase):
-    """Queued send job placeholder for Exchange Server EWS environments.
+class EmailSendQueueStore(EmailSendQueueStoreBase, ExchangeServerStoreBase):
+    """EWS adapter for the shared Azure Table queue contract.
 
-    Exchange Server EWS does not provide the same Azure Table queue abstraction
-    used in the Graph-backed implementation. This adapter keeps the same store API
-    surface, but uses the configured EWS account directly when a queued job is
-    dispatched.
+    This backend keeps the same API surface as the Graph store, but it does not
+    implement the actual service-principal sending path in the EWS environment.
     """
 
-    def enqueue_send_job(self, req: MailboxCreateSendJobInput) -> dict[str, Any]:
-        return {
-            "status": "queued",
-            "table": "exchange-server-ews",
-            "account": "ews",
-            "partitionKey": "ews",
-            "rowKey": req.draft_email_id,
-            "job": {
-                "draftemailid": req.draft_email_id,
-                "schedulesendtime": req.schedule_send_time.isoformat(),
-                "status": req.status,
-                "senttime": req.sent_time.isoformat() if req.sent_time else "",
-                "subject": req.subject or "",
-                "userupn": "",
-            },
-        }
+    def __init__(self, token_provider: Callable[[], str | None] | None = None) -> None:
+        ExchangeServerStoreBase.__init__(self, token_provider=token_provider)
+        EmailSendQueueStoreBase.__init__(self, token_provider or (lambda: None), table_name=os.getenv("AZURE_STORAGE_TABLE_NAME"))
 
-    def list_pending_jobs(self, limit: int = 20, *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
-        del limit
-        return []
+    def _resolve_user_upn(self) -> str:
+        mailbox = (self._mailbox or "").strip()
+        if mailbox:
+            return mailbox
+        raise ValueError("EXCHANGE_SERVER_MAILBOX is required for EWS queue operations")
 
-    def get_job(self, job_id: str) -> dict[str, Any]:
-        raise ValueError(f"send job not found: {job_id}")
-
-    def cancel_job(self, job_id: str) -> dict[str, Any]:
-        raise ValueError(f"send job not found: {job_id}")
-
-    def update_job_schedule(self, req: MailboxUpdateSendJobScheduleInput) -> dict[str, Any]:
-        raise ValueError(f"send job not found: {req.job_id}")
-
-    def dispatch_pending_jobs(self) -> dict[str, Any]:
-        return {"status": "ok", "sent_count": 0, "failed_count": 0, "skipped_not_due_count": 0}
+    def _send_draft_for_job(self, *, user_upn: str, draft_email_id: str) -> None:
+        _ = user_upn, draft_email_id
+        raise NotImplementedError("EWS queue send execution is not implemented in this adapter")

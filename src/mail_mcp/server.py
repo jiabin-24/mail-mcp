@@ -144,11 +144,6 @@ APP = FastMCP(
     auth=_auth_settings,
 )
 
-# 运行时对外暴露的 MCP 工具入口，后续按具体存储实现注册邮件、日历和队列能力。
-
-_AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"
-_EXPOSE_AGENTS_MD = os.getenv("MCP_EXPOSE_AGENTS_MD", "false").strip().lower() == "true"
-
 register_calendar_tools(APP, CALENDAR_STORE)
 register_common_tools(APP, GRAPH_STORE)
 register_email_tools(APP, EMAIL_STORE)
@@ -166,20 +161,13 @@ def mailbox_get_user_time_zone() -> dict[str, str]:
     """Get current user's mailbox time zone."""
     return GRAPH_STORE.get_user_time_zone()
 
-
-if _EXPOSE_AGENTS_MD:
+# 运行时对外暴露的 MCP 工具入口，后续按具体存储实现注册邮件、日历和队列能力。
+_AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"
+if (os.getenv("MCP_EXPOSE_AGENTS_MD", "false").strip().lower() == "true") and _AGENTS_MD_PATH.exists():
 
     @APP.tool()
     def mailbox_get_agents_md() -> dict[str, str | bool]:
         """Read repository AGENTS.md for external MCP clients."""
-        if not _AGENTS_MD_PATH.exists():
-            return {
-                "enabled": True,
-                "found": False,
-                "path": str(_AGENTS_MD_PATH),
-                "content": "",
-            }
-
         content = _AGENTS_MD_PATH.read_text(encoding="utf-8")
         return {
             "enabled": True,
