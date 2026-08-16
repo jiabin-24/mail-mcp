@@ -20,16 +20,14 @@ class ExchangeServerStoreBase:
         self._client_id = (os.getenv("EXCHANGE_SERVER_CLIENT_ID") or "").strip()
         self._client_secret = (os.getenv("EXCHANGE_SERVER_CLIENT_SECRET") or "").strip()
         self._tenant_id = (os.getenv("EXCHANGE_SERVER_TENANT_ID") or "").strip()
-        self._access_token = (os.getenv("EXCHANGE_SERVER_ACCESS_TOKEN") or "").strip()
         self._time_zone = (os.getenv("EXCHANGE_SERVER_TIME_ZONE") or "UTC").strip()
         self._account: Account | None = None
 
     def _credentials(self):
-        token = self._token_provider() if self._token_provider else self._access_token or None
+        token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
         if not token:
             raise ValueError(
-                "Exchange Server EWS requires a bearer access token. "
-                "Provide Authorization: Bearer <token> or set EXCHANGE_SERVER_ACCESS_TOKEN."
+                "Exchange Server EWS requires a bearer access token from the current request header or OUTLOOK_ACCESS_TOKEN."
             )
         if not self._client_id or not self._client_secret:
             raise ValueError(
@@ -45,7 +43,7 @@ class ExchangeServerStoreBase:
         )
 
     def _resolve_current_mailbox(self) -> str:
-        token = self._token_provider() if self._token_provider else self._access_token or None
+        token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
         if not token:
             return ""
 

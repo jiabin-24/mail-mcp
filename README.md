@@ -83,10 +83,10 @@ az acr repository show-tags \
 
 ### 2.1 Outlook 鉴权配置
 
-服务会按以下优先级获取 Graph Token：
+服务会按以下优先级获取 Bearer Token：
 
 1. MCP 请求头中的 `Authorization: Bearer <token>`（推荐）
-2. 环境变量 `OUTLOOK_ACCESS_TOKEN`（调试兜底）
+2. 环境变量 `OUTLOOK_ACCESS_TOKEN`（调试兜底，Graph 与 EWS 均适用）
 
 可选环境变量：
 
@@ -120,17 +120,14 @@ EXCHANGE_SERVER_CLIENT_ID=<app-registration-client-id>
 EXCHANGE_SERVER_CLIENT_SECRET=<app-registration-client-secret>
 EXCHANGE_SERVER_TENANT_ID=<tenant-id>
 
-# 访问令牌兜底；优先使用当前请求中的 Authorization: Bearer token
-EXCHANGE_SERVER_ACCESS_TOKEN=<bearer-access-token>
-
 # 可选：Mailbox 时区，默认 UTC
-EXCHANGE_SERVER_TIME_ZONE=UTC
+EXCHANGE_SERVER_TIME_ZONE=Asia/Shanghai
 ```
 
 注意：
 
 - 该模式已改为 bearer token 认证，不再接受 `EXCHANGE_SERVER_USERNAME` / `EXCHANGE_SERVER_PASSWORD`。
-- 访问令牌优先来源为当前请求中的 `Authorization: Bearer <token>`，其次是 `EXCHANGE_SERVER_ACCESS_TOKEN`。
+- EWS 也支持统一的 token 解析顺序：当前请求头中的 `Authorization: Bearer <token>` 优先，未提供时回退到 `OUTLOOK_ACCESS_TOKEN`。
 - EWS 仅从当前登录用户的 bearer token 中解析邮箱，不支持指定邮箱/共享邮箱。
 - `EXCHANGE_SERVER_URL` 必须指向实际的 EWS/Exchange 端点，不要只填域名。
 
