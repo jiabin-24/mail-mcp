@@ -5,7 +5,7 @@ import os
 
 
 class ColorLevelFormatter(logging.Formatter):
-    """Render logs as '<colored LEVEL>:    <message>' with four spaces."""
+    """将日志格式化为 '<colored LEVEL>:    <message>' 的固定四空格样式。"""
 
     RESET = "\x1b[0m"
     COLORS = {
@@ -32,7 +32,7 @@ class ColorLevelFormatter(logging.Formatter):
 
 
 def configure_namespace_logger(namespace: str, handler_name: str) -> None:
-    """Ensure logs in a namespace are consistently prefixed with level name."""
+    """确保同一命名空间下的日志都带有统一的级别前缀。"""
     logger = logging.getLogger(namespace)
     logger.setLevel(logging.INFO)
 
@@ -48,6 +48,6 @@ def configure_namespace_logger(namespace: str, handler_name: str) -> None:
 
 
 def configure_default_loggers() -> None:
-    """Configure default logger namespaces used by this service."""
+    """配置本服务默认使用的日志命名空间。"""
     configure_namespace_logger("mcp", "mail_mcp_mcp_stream_handler")
     configure_namespace_logger("mail_mcp", "mail_mcp_namespace_stream_handler")

@@ -152,13 +152,13 @@ register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
 
 @APP.tool()
 def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
-    """List tenant users and their mailbox addresses via Microsoft Graph /users."""
+    """List tenant users and their mailbox addresses to resolve recipients or shared mailboxes."""
     return GRAPH_STORE.list_tenant_users(search=search, limit=limit)
 
 
 @APP.tool()
 def mailbox_get_user_time_zone() -> dict[str, str]:
-    """Get current user's mailbox time zone."""
+    """Get the current mailbox timezone configuration."""
     return GRAPH_STORE.get_user_time_zone()
 
 # 运行时对外暴露的 MCP 工具入口，后续按具体存储实现注册邮件、日历和队列能力。
@@ -167,7 +167,7 @@ if (os.getenv("MCP_EXPOSE_AGENTS_MD", "false").strip().lower() == "true") and _A
 
     @APP.tool()
     def mailbox_get_agents_md() -> dict[str, str | bool]:
-        """Read repository AGENTS.md for external MCP clients."""
+        """Read the repository AGENTS.md content for external MCP clients."""
         content = _AGENTS_MD_PATH.read_text(encoding="utf-8")
         return {
             "enabled": True,
@@ -178,7 +178,7 @@ if (os.getenv("MCP_EXPOSE_AGENTS_MD", "false").strip().lower() == "true") and _A
 
 @APP.tool()
 def ping() -> dict[str, str]:
-    """Health check tool."""
+    """Health check endpoint for the mail MCP service."""
     return {"status": "ok", "service": "mail-assistant"}
 
 

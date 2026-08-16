@@ -13,12 +13,12 @@ from ..schemas.request_models import (
 def register_email_tools(app, email_store: EmailStore) -> None:
     @app.tool()
     def mailbox_list_folders() -> list[str]:
-        """List available mail folders."""
+        """List all available folders in the current mailbox."""
         return email_store.list_folders()
 
     @app.tool()
     def mailbox_list_messages(folder: str = "inbox", limit: int = 20) -> list[dict]:
-        """List messages from a folder."""
+        """List messages from a specific mailbox folder."""
         req = validate_input(
             MailboxListMessagesInput,
             {"folder": folder, "limit": limit},
@@ -27,7 +27,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
 
     @app.tool()
     def mailbox_get_message(message_id: str) -> dict:
-        """Get one message by ID."""
+        """Retrieve a message by message ID."""
         req = validate_input(MailboxGetMessageInput, {"message_id": message_id})
         message = email_store.get_message(req)
         if not message:
@@ -42,7 +42,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         folder: str = "inbox",
         limit: int = 20,
     ) -> list[dict]:
-        """Search messages with direct Graph $search/$filter passthrough."""
+        """Search mailbox messages using Graph $search and/or $filter parameters."""
         req = validate_input(
             MailboxSearchInput,
             {
@@ -63,7 +63,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
     ) -> dict:
-        """Create a draft message in Outlook mailbox."""
+        """Create a draft email in the Outlook mailbox."""
         req = validate_input(
             MailboxComposeInput,
             {
@@ -78,7 +78,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
 
     @app.tool()
     def mailbox_reply_compose(message_id: str, body: str) -> dict:
-        """Create a reply draft for an existing message while preserving thread context."""
+        """Create a reply draft based on an existing message while preserving thread context."""
         req = validate_input(
             MailboxReplyComposeInput,
             {"message_id": message_id, "body": body},
@@ -94,7 +94,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
     ) -> dict:
-        """Update an existing draft message in Outlook mailbox."""
+        """Update an existing draft email in the Outlook mailbox."""
         req = validate_input(
             MailboxUpdateDraftInput,
             {
@@ -113,7 +113,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
 
     @app.tool()
     def mailbox_send_draft(draft_id: str) -> dict:
-        """Send an existing draft in Outlook mailbox."""
+        """Send a draft email from the Outlook mailbox."""
         req = validate_input(MailboxDraftIdInput, {"draft_id": draft_id})
         sent = email_store.send_draft(req)
         if not sent:
@@ -122,7 +122,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
 
     @app.tool()
     def mailbox_revoke_draft(draft_id: str) -> dict:
-        """Revoke (delete) an existing draft in Outlook mailbox."""
+        """Discard and delete a draft email from the Outlook mailbox."""
         req = validate_input(MailboxDraftIdInput, {"draft_id": draft_id})
         revoked = email_store.revoke_draft(req)
         if not revoked:

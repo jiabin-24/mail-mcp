@@ -46,7 +46,7 @@ def _token_cache_ttl_seconds() -> int:
     return max(0, parsed)
 
 class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
-    """Capture delegated bearer token and store resolved token in request context."""
+    """捕获委托的 Bearer token，并把解析后的 token 存入请求上下文。"""
 
     def __init__(
         self,

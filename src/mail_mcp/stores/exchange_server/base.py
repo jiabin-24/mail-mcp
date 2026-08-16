@@ -9,7 +9,7 @@ from exchangelib.credentials import Credentials
 
 
 class ExchangeServerStoreBase:
-    """Common EWS connection and helper logic for Exchange Server access."""
+    """Exchange Server EWS 连接及公共辅助逻辑。"""
 
     def __init__(self, token_provider: Callable[[], str | None] | None = None) -> None:
         self._token_provider = token_provider

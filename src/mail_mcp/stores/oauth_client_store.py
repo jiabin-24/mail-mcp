@@ -10,7 +10,7 @@ from .table_storage import AzureTableContext, AzureTableJsonKV, build_table_cont
 
 
 class AzureTableOAuthClientStore:
-    """Persist OAuth dynamic clients into Azure Table Storage."""
+    """将动态 OAuth 客户端信息持久化到 Azure Table Storage。"""
 
     _PARTITION_KEY = "oauth_clients"
 
@@ -42,7 +42,7 @@ class AzureTableOAuthClientStore:
         )
 
 def build_oauth_client_store_from_env() -> AzureTableOAuthClientStore | None:
-    """Build Azure Table-backed OAuth client store using existing AZURE_* settings."""
+    """根据现有 AZURE_* 环境变量构建 Azure Table 版 OAuth 客户端注册表。"""
 
     context = build_table_context_from_env("OAuthClientRegistry", optional=True)
     if context is None:

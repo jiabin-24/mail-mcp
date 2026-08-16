@@ -22,7 +22,7 @@ GRAPH_QUERY_SAFE = "()':,=-"
 
 
 class EmailStore(GraphStoreBase):
-    """Email-focused operations backed by Microsoft Graph mailbox APIs."""
+    """基于 Microsoft Graph 邮箱 API 的邮件相关操作。"""
 
     def _resolved_mailbox_time_zone(self) -> str:
         info = self.get_user_time_zone(fallback="UTC")

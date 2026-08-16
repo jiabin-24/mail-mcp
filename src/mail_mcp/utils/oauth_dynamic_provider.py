@@ -121,7 +121,7 @@ class ExternalTokenBundle:
 class DynamicOAuthProvider(
     OAuthAuthorizationServerProvider[AuthorizationCode, RefreshToken, AccessToken]
 ):
-    """OAuth provider with Dynamic Client Registration and Entra-based user login."""
+    """支持动态客户端注册和 Entra 用户登录的 OAuth provider。"""
 
     def __init__(
         self,

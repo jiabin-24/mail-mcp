@@ -14,10 +14,10 @@ from .table_storage import build_table_context_from_env
 
 
 class EmailSendQueueStoreBase:
-    """Shared Azure Table-backed queue logic for scheduled email jobs.
+    """基于 Azure Table 的共享定时邮件发送队列逻辑。
 
-    Concrete backend adapters only need to resolve the current user and send the
-    actual queued draft when the schedule becomes due.
+    具体后端适配器只需要解析当前用户，并在计划执行时间到达时发送
+    对应的草稿邮件；其余队列生命周期逻辑由这里统一维护。
     """
 
     def __init__(self, token_provider: Callable[[], str | None], *, table_name: str | None = None) -> None:

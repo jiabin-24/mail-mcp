@@ -15,7 +15,7 @@ from .base import ExchangeServerStoreBase
 
 
 class CalendarStore(ExchangeServerStoreBase):
-    """Calendar operations backed by Exchange Server EWS."""
+    """基于 Exchange Server EWS 的日历操作。"""
 
     def get_calendar_event(self, req: CalendarGetEventInput) -> dict[str, Any] | None:
         account = self._build_account()

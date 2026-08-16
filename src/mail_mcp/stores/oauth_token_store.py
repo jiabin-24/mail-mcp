@@ -12,7 +12,7 @@ from .table_storage import AzureTableContext, AzureTableJsonKV, build_table_cont
 
 
 class AzureTableOAuthTokenStore:
-    """Persist OAuth runtime token/state artifacts into Azure Table Storage."""
+    """将 OAuth 运行时 token 与状态信息持久化到 Azure Table Storage。"""
 
     _PENDING_AUTH_PARTITION = "pending_auth"
     _AUTH_CODE_PARTITION = "auth_code"
@@ -297,9 +297,9 @@ class AzureTableOAuthTokenStore:
         return value or None
 
     def cleanup_expired_access_and_refresh_tokens(self, *, limit: int = 100) -> dict[str, int]:
-        """On-demand cleanup for expired access/refresh tokens.
+        """按需清理已过期的 access/refresh token。
 
-        Each token type is cleaned in a bounded batch (max 100 per run by default).
+        每种 token 类型都按有限批次清理，默认每次最多处理 100 条。
         """
         return self.cleanup_expired_scopes_before_until_clean(
             scopes=[
@@ -319,7 +319,7 @@ class AzureTableOAuthTokenStore:
         limit: int = 100,
         max_rounds: int = 100,
     ) -> dict[str, int]:
-        """Repeat scope-based stale cleanup in batches until no rows remain."""
+        """按 scope 分批重复清理过期记录，直到无剩余过期行。"""
         safe_limit = max(1, min(int(limit), 100))
         safe_rounds = max(1, int(max_rounds))
         safe_cutoff = int(cutoff_epoch)

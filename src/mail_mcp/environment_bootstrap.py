@@ -5,7 +5,7 @@ from dotenv import dotenv_values
 
 
 class EnvironmentBootstrapper:
-    """Load environment variables from local dotenv files in a predictable priority order."""
+    """按稳定优先级加载本地 dotenv 文件中的环境变量。"""
 
     def __init__(self, root_dir: Path) -> None:
         self.root_dir = root_dir
@@ -19,7 +19,7 @@ class EnvironmentBootstrapper:
         for key, value in dotenv_values(path).items():
             if value is None:
                 continue
-            # Keep process-level env vars (for App Service / secret settings) as highest priority.
+            # 进程级环境变量优先级最高，适用于 App Service / Secret 配置等场景。
             os.environ.setdefault(key, value)
 
     def bootstrap(self) -> None:

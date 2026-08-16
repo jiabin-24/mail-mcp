@@ -8,10 +8,10 @@ from .base import ExchangeServerStoreBase
 
 
 class EmailSendQueueStore(EmailSendQueueStoreBase, ExchangeServerStoreBase):
-    """EWS adapter for the shared Azure Table queue contract.
+    """共享 Azure Table 队列契约的 EWS 适配器。
 
-    This backend keeps the same API surface as the Graph store, but it does not
-    implement the actual service-principal sending path in the EWS environment.
+    这个后端保留与 Graph 版本一致的 API 入口，但当前 EWS 环境下
+    还没有实现真正的服务主体发送路径，需要后续按实际部署方式补齐。
     """
 
     def __init__(self, token_provider: Callable[[], str | None] | None = None) -> None:

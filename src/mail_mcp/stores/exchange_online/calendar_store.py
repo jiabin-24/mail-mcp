@@ -26,7 +26,7 @@ GRAPH_DATETIME_SAFE = "-:.TZ"
 
 
 class CalendarStore(GraphStoreBase):
-    """Calendar-focused operations backed by Microsoft Graph calendar APIs."""
+    """基于 Microsoft Graph 日历 API 的日历相关操作。"""
 
     def get_calendar_event(self, req: CalendarGetEventInput) -> dict[str, Any] | None:
         mailbox_time_zone = self.get_mailbox_time_zone_if_available()

@@ -42,7 +42,7 @@ def register_email_queue_tools(
         subject: str | None = None,
         status: str = "scheduled",
     ) -> dict:
-        """Create a scheduled send job in Azure Table Storage (EmailSendQueue)."""
+        """Create a scheduled send job for a mail draft in Azure Table Storage."""
         store = _require_queue_store(queue_store)
         normalized_schedule_send_time = _normalize_datetime_input_with_mailbox_time_zone(
             store,
@@ -62,7 +62,7 @@ def register_email_queue_tools(
 
     @app.tool()
     def mailbox_list_pending_email_draft_send_jobs(limit: int = 20) -> list[dict]:
-        """List scheduled/failed send jobs for the current signed-in user."""
+        """List pending or failed scheduled send jobs for the current mailbox."""
         store = _require_queue_store(queue_store)
 
         req = validate_input(MailboxListSendJobsInput, {"limit": limit})
@@ -70,7 +70,7 @@ def register_email_queue_tools(
 
     @app.tool()
     def mailbox_revoke_email_draft_send_job(job_id: str) -> dict:
-        """Revoke a scheduled-send job by marking it as cancel in Azure Table Storage."""
+        """Cancel a scheduled send job and mark it as revoked in Azure Table Storage."""
         store = _require_queue_store(queue_store)
 
         req = validate_input(MailboxSendJobIdInput, {"job_id": job_id})
@@ -93,7 +93,7 @@ def register_email_queue_tools(
         job_id: str,
         schedule_send_time: str,
     ) -> dict:
-        """Update schedule_send_time for one scheduled send job."""
+        """Update the scheduled send time for an existing send job."""
         store = _require_queue_store(queue_store)
         normalized_schedule_send_time = _normalize_datetime_input_with_mailbox_time_zone(
             store,

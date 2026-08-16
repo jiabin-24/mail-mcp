@@ -15,7 +15,7 @@ from .base import ExchangeServerStoreBase
 
 
 class EmailStore(ExchangeServerStoreBase):
-    """Email operations backed by Exchange Server EWS."""
+    """基于 Exchange Server EWS 的邮件操作。"""
 
     def list_folders(self) -> list[str]:
         account = self._build_account()

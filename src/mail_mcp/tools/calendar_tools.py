@@ -22,7 +22,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         search: str | None = None,
         limit: int = 20,
     ) -> list[dict]:
-        """List calendar events, optionally scoped by ISO datetime range and keyword search."""
+        """List calendar events, optionally filtered by ISO time range and keyword search."""
         req = validate_input(
             CalendarListEventsInput,
             {"start": start, "end": end, "search": search, "limit": limit},
@@ -31,7 +31,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
 
     @app.tool()
     def calendar_get_event(event_id: str, calendar_id: str | None = None) -> dict:
-        """Get a calendar event by ID."""
+        """Retrieve a calendar event by ID."""
         req = validate_input(
             CalendarGetEventInput,
             {"event_id": event_id, "calendar_id": calendar_id},
@@ -54,7 +54,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         time_zone: str | None = None,
         calendar_id: str | None = None,
     ) -> dict:
-        """Create a calendar event in Outlook mailbox."""
+        """Create a calendar event in the Outlook mailbox."""
         req = validate_input(
             CalendarCreateEventInput,
             {
@@ -84,7 +84,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         time_zone: str | None = None,
         calendar_id: str | None = None,
     ) -> dict:
-        """Update an existing calendar event in Outlook mailbox."""
+        """Update an existing calendar event in the Outlook mailbox."""
         req = validate_input(
             CalendarUpdateEventInput,
             {
@@ -107,7 +107,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
 
     @app.tool()
     def calendar_delete_event(event_id: str, calendar_id: str | None = None) -> dict:
-        """Delete an existing calendar event in Outlook mailbox."""
+        """Delete a calendar event from the Outlook mailbox."""
         req = validate_input(
             CalendarDeleteEventInput,
             {"event_id": event_id, "calendar_id": calendar_id},
@@ -125,7 +125,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         send_response: bool = True,
         calendar_id: str | None = None,
     ) -> dict:
-        """Respond to a meeting invitation: accept, decline, or tentative."""
+        """Respond to a meeting invitation by accepting, declining, or tentatively accepting."""
         req = validate_input(
             CalendarRespondInvitationInput,
             {

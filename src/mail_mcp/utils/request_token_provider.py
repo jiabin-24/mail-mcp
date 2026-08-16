@@ -6,7 +6,7 @@ RESOLVED_GRAPH_TOKEN_STATE_KEY = "resolved_graph_access_token"
 
 
 class RequestTokenProvider:
-    """Helpers for resolving bearer token from current MCP request context."""
+    """从当前 MCP 请求上下文解析 Bearer 令牌的辅助工具。"""
 
     @staticmethod
     def extract_bearer_token(authorization: str) -> str | None:
@@ -19,7 +19,7 @@ class RequestTokenProvider:
 
     @staticmethod
     def current_request_token() -> str | None:
-        """Resolve token from the current MCP request context when available."""
+        """在当前请求上下文中解析令牌，若上下文不可用则返回 None。"""
         try:
             from mcp.server.lowlevel.server import request_ctx as mcp_request_ctx
 
@@ -63,7 +63,7 @@ class RequestTokenProvider:
 
     @staticmethod
     def token_provider() -> str | None:
-        # Only use token from current MCP request header to avoid stale token reuse.
+        # 仅使用当前 MCP 请求头中的 token，避免复用过期或错误的历史令牌。
         return RequestTokenProvider.current_request_token()
 
     @staticmethod

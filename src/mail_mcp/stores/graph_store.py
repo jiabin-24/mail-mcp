@@ -37,7 +37,7 @@ class GraphStoreBase:
         return max(1, min(limit, 100))
 
     def _folder_segment(self, folder: str | None) -> str:
-        """Normalize mailbox folder names to Graph folder paths."""
+        """将邮箱文件夹名称规范化为 Graph 可识别的路径。"""
         normalized = (folder or "").strip()
         if not normalized:
             return "inbox"
@@ -59,7 +59,7 @@ class GraphStoreBase:
         return quote(normalized, safe="")
 
     def _body_content_type(self, body: str | None) -> str:
-        """Detect whether a message body should be sent as HTML or plain text."""
+        """根据消息正文内容判断应使用 HTML 还是纯文本格式。"""
         text = (body or "").strip()
         if not text:
             return "Text"
@@ -68,7 +68,7 @@ class GraphStoreBase:
         return "Text"
 
     def _emails_to_recipients(self, emails: list[str] | None) -> list[dict[str, Any]]:
-        """Convert plain email addresses into Graph recipient payloads."""
+        """将纯邮箱地址列表转换为 Graph 收件人请求体。"""
         recipients: list[dict[str, Any]] = []
         for email in emails or []:
             cleaned = str(email or "").strip()
@@ -77,7 +77,7 @@ class GraphStoreBase:
         return recipients
 
     def _emails_to_attendees(self, emails: list[str] | None) -> list[dict[str, Any]]:
-        """Convert plain email addresses into Graph attendee payloads."""
+        """将纯邮箱地址列表转换为 Graph 会议出席人请求体。"""
         attendees: list[dict[str, Any]] = []
         for email in emails or []:
             cleaned = str(email or "").strip()
@@ -89,7 +89,7 @@ class GraphStoreBase:
         return attendees
 
     def _plain_text_to_html(self, text: str | None) -> str:
-        """Escape plain text and convert line breaks to HTML breaks."""
+        """对纯文本做 HTML 转义，并将换行转换为 br。"""
         content = str(text or "")
         escaped = (
             content.replace("&", "&amp;")
@@ -99,7 +99,7 @@ class GraphStoreBase:
         return escaped.replace("\r\n", "\n").replace("\n", "<br/>")
 
     def _compose_online_meeting_body(self, description: str | None, existing_body_html: str | None) -> str:
-        """Compose HTML meeting body while preserving any existing meeting text."""
+        """组合在线会议正文，保留既有内容并追加新描述。"""
         new_html = self._plain_text_to_html(description)
         if not new_html.strip():
             return existing_body_html or "<div></div>"
@@ -110,7 +110,7 @@ class GraphStoreBase:
         return combined
 
     def _event_path(self, event_id: str, calendar_id: str | None = None) -> str:
-        """Build a Graph event path for a calendar or default mailbox calendar."""
+        """为默认日历或指定日历构造 Graph 事件路径。"""
         encoded_event_id = quote(str(event_id or "").strip(), safe="")
         if calendar_id:
             return f"{self._mailbox_prefix}/calendars/{quote(str(calendar_id), safe='')}/events/{encoded_event_id}"
@@ -124,7 +124,7 @@ class GraphStoreBase:
         prefer_preview: bool = False,
         mailbox_time_zone: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Map Graph message payloads into the canonical response format."""
+        """将 Graph 邮件对象映射为统一的响应结构。"""
         return [
             map_graph_message(
                 message,
@@ -141,7 +141,7 @@ class GraphStoreBase:
         events: list[dict[str, Any]] | None,
         mailbox_time_zone: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Map Graph calendar payloads into the canonical response format."""
+        """将 Graph 日历对象映射为统一的响应结构。"""
         return [
             map_graph_calendar_event(event, mailbox_time_zone=mailbox_time_zone)
             for event in (events or [])
