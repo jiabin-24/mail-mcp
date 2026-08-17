@@ -53,10 +53,12 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
         app: Any,
         token_resolver: Callable[..., str | None | Awaitable[str | None]] | None = None,
         require_bearer_token: bool = True,
+        validate_graph_token: bool = True,
     ) -> None:
         super().__init__(app)
         self._token_resolver = token_resolver
         self._require_bearer_token = require_bearer_token
+        self._validate_graph_token = validate_graph_token
         self._token_cache: dict[str, float] = {}
         self._graph_base = os.getenv(GRAPH_BASE_URL_ENV, GRAPH_DEFAULT_BASE_URL).rstrip("/")
         self._resolver_supports_force_refresh = self._detect_force_refresh_support(token_resolver)
@@ -175,6 +177,9 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
         return bool((resolved_token or token_value) and self._token_resolver is None)
 
     async def _validate_token(self, token: str) -> bool:
+        if not self._validate_graph_token:
+            return True
+
         ttl = _token_cache_ttl_seconds()
         now = time.time()
         key = hashlib.sha256(token.encode("utf-8")).hexdigest()

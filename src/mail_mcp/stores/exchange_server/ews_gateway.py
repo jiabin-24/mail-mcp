@@ -36,7 +36,7 @@ class EwsGateway(GatewayBase):
         )
         result = app.acquire_token_on_behalf_of(
             user_assertion=user_token,
-            scope=["EWS.AccessAsUser.All"],
+            scopes=["EWS.AccessAsUser.All"],
         )
 
         if not result or not result.get("access_token"):
@@ -91,6 +91,18 @@ class EwsGateway(GatewayBase):
             or str(payload.get("mail", "") or "").strip().lower()
         )
         return mailbox
+
+    def get_user_time_zone(self, fallback: str = "UTC") -> dict[str, str]:
+        fixed_time_zone = "Asia/Shanghai"
+        return {"time_zone": fixed_time_zone, "source": "ews_fixed"}
+
+    def get_mailbox_time_zone_if_available(self) -> str | None:
+        time_zone_info = self.get_user_time_zone(fallback="")
+        resolved = str(time_zone_info.get("time_zone", "") or "").strip()
+        return resolved or None
+
+    def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
+        return []
 
     def _build_account(self) -> Account:
         if self._account is not None:

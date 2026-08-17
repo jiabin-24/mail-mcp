@@ -219,6 +219,35 @@ Token 权限至少满足以下之一：
 - Port: `80`
 - Path: `/mcp`
 
+#### 2.1.2 重置 VS Code 缓存的动态 Client ID（触发新 client_id）
+
+当浏览器回调出现类似错误时：
+
+```json
+{"error":"invalid_request","error_description":"Client ID '<old-client-id>' not found"}
+```
+
+通常是 VS Code 侧缓存了旧的 MCP 动态注册信息。可按以下方式重置。
+
+方法一：命令面板清理（推荐）
+
+1. 打开命令面板：`Ctrl+Shift+P`（Windows/Linux）或 `Cmd+Shift+P`（macOS）。
+2. 执行：`Authentication: Remove Dynamic Authentication Provider`。
+3. 在列表中选择你的 MCP 服务（例如 `mail-assist-mcp-local`）。
+4. 确认后，VS Code 会删除该服务对应的动态 `client_id` 和关联认证缓存。
+5. 下次重新连接 MCP 服务时，会重新走 OAuth/DCR 流程并生成新的 `client_id`。
+
+方法二：手动清理本地缓存（高级）
+
+1. 完全退出 VS Code。
+2. 清理当前用户的 VS Code 缓存目录中与 MCP/OAuth 相关的条目（重点检查 `User/globalStorage` 与 `User/workspaceStorage`）。
+3. 重新打开 VS Code，再次连接该 MCP 服务，触发新的动态注册。
+
+说明：
+
+- 你当前仓库的 `.vscode/mcp.json` 仅配置服务器地址，不保存动态 `client_id`。
+- 如果服务端也清理了 `OAuthClientRegistry`，而客户端未清理缓存，也会出现同样错误；此时优先执行方法一。
+
 ### 2.2 反向代理与 HTTPS
 
 建议把 `mail-mcp` 仅暴露到内网 HTTP，并由 Nginx/Caddy 负责 443 TLS 终结。核心思路是：

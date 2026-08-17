@@ -63,7 +63,7 @@ configure_default_loggers()
 # 统一构造 token provider 与后端存储实例，供邮件/日历/队列工具共用。
 TOKEN_PROVIDER = RequestTokenProvider.as_callable()
 EMAIL_STORE, CALENDAR_STORE, EMAIL_SEND_QUEUE_STORE = _build_store_backend(TOKEN_PROVIDER)
-GRAPH_STORE = GraphGateway(token_provider=TOKEN_PROVIDER)
+COMMON_BACKEND_GATEWAY = EMAIL_STORE
 
 _oauth_provider: DynamicOAuthProvider | None = None
 _auth_settings: AuthSettings | None = None
@@ -146,7 +146,7 @@ APP = FastMCP(
 )
 
 register_calendar_tools(APP, CALENDAR_STORE)
-register_common_tools(APP, GRAPH_STORE)
+register_common_tools(APP, COMMON_BACKEND_GATEWAY)
 register_email_tools(APP, EMAIL_STORE)
 register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
 
@@ -154,13 +154,13 @@ register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
 @APP.tool()
 def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
     """List tenant users and their mailbox addresses to resolve recipients or shared mailboxes."""
-    return GRAPH_STORE.list_tenant_users(search=search, limit=limit)
+    return COMMON_BACKEND_GATEWAY.list_tenant_users(search=search, limit=limit)
 
 
 @APP.tool()
 def mailbox_get_user_time_zone() -> dict[str, str]:
     """Get the current mailbox timezone configuration."""
-    return GRAPH_STORE.get_user_time_zone()
+    return COMMON_BACKEND_GATEWAY.get_user_time_zone()
 
 # 运行时对外暴露的 MCP 工具入口，后续按具体存储实现注册邮件、日历和队列能力。
 _AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"
@@ -225,10 +225,12 @@ def _build_asgi_app():
     starlette_app.add_route("/", index, methods=["GET"])
     starlette_app.add_route("/healthz", healthz, methods=["GET"])
     starlette_app.add_route("/jobs/dispatch", dispatch_send_jobs, methods=["GET"])
+    backend = (os.getenv("MAIL_MCP_BACKEND") or "graph").strip().lower()
     starlette_app.add_middleware(
         OAuthTokenLogMiddleware,
         token_resolver=(_oauth_provider.resolve_graph_access_token if _oauth_provider else None),
         require_bearer_token=(_oauth_provider is None),
+        validate_graph_token=(backend != "ews"),
     )
     return starlette_app
 
