@@ -636,6 +636,8 @@ class DynamicOAuthProvider(
                 _token_fingerprint(mcp_access_token),
             )
             refreshed = await self._refresh_external_graph_token(external)
+            if refreshed is None:
+                return None
             async with self._lock:
                 if mcp_access_token in self._access_external_tokens:
                     self._access_external_tokens[mcp_access_token] = refreshed
@@ -651,6 +653,8 @@ class DynamicOAuthProvider(
         if external.graph_expires_at is not None and external.graph_expires_at <= now:
             # 外部 Graph token 过期时尝试刷新，并把最新映射回写持久层。
             refreshed = await self._refresh_external_graph_token(external)
+            if refreshed is None:
+                return None
             async with self._lock:
                 if mcp_access_token in self._access_external_tokens:
                     self._access_external_tokens[mcp_access_token] = refreshed
@@ -867,9 +871,10 @@ class DynamicOAuthProvider(
             graph_expires_at=graph_expires_at,
         )
 
-    async def _refresh_external_graph_token(self, external: ExternalTokenBundle) -> ExternalTokenBundle:
+    async def _refresh_external_graph_token(self, external: ExternalTokenBundle) -> ExternalTokenBundle | None:
         if not external.graph_refresh_token:
-            raise TokenError("invalid_grant", "delegated refresh token is unavailable")
+            LOGGER.warning("delegated graph token refresh skipped because no refresh token is available")
+            return None
 
         refresh_fp = _token_fingerprint(external.graph_refresh_token)
         LOGGER.info("delegated graph token refresh started refresh_token_fp=%s", refresh_fp)
@@ -933,8 +938,7 @@ def get_dynamic_oauth_config_from_env() -> dict[str, Any] | None:
     client_id = (os.getenv("MCP_OAUTH_CLIENT_ID") or "").strip()
     client_secret = (os.getenv("MCP_OAUTH_CLIENT_SECRET") or "").strip()
     scope_str = (
-        os.getenv("MCP_OAUTH_ENTRA_SCOPES")
-        or "openid profile offline_access User.Read Mail.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite"
+        os.getenv("MAIL_MCP_BACKEND") == "graph" and os.getenv("MCP_OAUTH_ENTRA_SCOPES") or os.getenv("MCP_OAUTH_ENTRA_APP_SCOPES")
     )
     scopes = [part for part in scope_str.split() if part]
 

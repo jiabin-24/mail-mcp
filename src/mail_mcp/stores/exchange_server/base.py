@@ -6,9 +6,10 @@ import os
 from datetime import UTC, datetime
 from typing import Any, Callable
 
-from exchangelib import Account, Configuration, DELEGATE
+import msal
+from exchangelib import Account, Configuration, DELEGATE, OAUTH2
 from exchangelib.credentials import OAuth2Credentials
-
+from oauthlib.oauth2 import OAuth2Token
 
 class ExchangeServerStoreBase:
     """Exchange Server EWS 连接及公共辅助逻辑。"""
@@ -23,27 +24,44 @@ class ExchangeServerStoreBase:
         self._time_zone = (os.getenv("EXCHANGE_SERVER_TIME_ZONE") or "UTC").strip()
         self._account: Account | None = None
 
+    def _exchange_token_via_obo(self, user_token: str) -> str:
+        app = msal.ConfidentialClientApplication(
+            client_id=self._client_id,
+            client_credential=self._client_secret,
+            authority=f"https://login.microsoftonline.com/{self._tenant_id}",
+        )
+        result = app.acquire_token_on_behalf_of(
+            user_assertion=user_token,
+            scope=["EWS.AccessAsUser.All"],
+        )
+
+        if not result or not result.get("access_token"):
+            error_text = result.get("error_description") or result.get("error") or "unknown reason"
+            raise ValueError(f"Exchange Server EWS OBO token exchange failed: {error_text}")
+
+        return result["access_token"]
+
     def _credentials(self):
-        token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
-        if not token:
+        raw_token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
+        if not raw_token:
             raise ValueError(
                 "Exchange Server EWS requires a bearer access token from the current request header or OUTLOOK_ACCESS_TOKEN."
             )
-        if not self._client_id or not self._client_secret:
-            raise ValueError(
-                "Exchange Server EWS bearer auth requires EXCHANGE_SERVER_CLIENT_ID and "
-                "EXCHANGE_SERVER_CLIENT_SECRET."
-            )
+
+        delegated_access_token = self._exchange_token_via_obo(raw_token)
 
         return OAuth2Credentials(
             client_id=self._client_id,
             client_secret=self._client_secret,
             tenant_id=self._tenant_id or None,
-            access_token=token,
+            access_token=OAuth2Token({
+                "access_token": delegated_access_token,
+                "token_type": "Bearer",
+            }),
         )
 
     def _resolve_current_mailbox(self) -> str:
-        token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
+        token = self._strip_bearer_prefix(self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip())
         if not token:
             return ""
 
@@ -89,6 +107,7 @@ class ExchangeServerStoreBase:
         config = Configuration(
             server=self._server_url,
             credentials=creds,
+            auth_type=OAUTH2,
         )
         account = Account(
             primary_smtp_address=mailbox,

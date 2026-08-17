@@ -107,7 +107,11 @@ class OAuthTokenLogMiddleware(BaseHTTPMiddleware):
             # 解析出的 Graph token 若失效，强制触发一次 refresh token 兑换并重试校验。
             if not await self._validate_token(resolved_token):
                 AUTH_LOGGER.warning("resolved delegated token is invalid; attempting forced refresh")
-                refreshed_token = await self._resolve_token(token_value, force_refresh=True)
+                try:
+                    refreshed_token = await self._resolve_token(token_value, force_refresh=True)
+                except Exception as exc:  # pragma: no cover - refresh is optional and should fail closed
+                    AUTH_LOGGER.warning("forced delegated refresh failed: %s", exc)
+                    return None, self._invalid_or_expired_response()
                 if not refreshed_token or not await self._validate_token(refreshed_token):
                     return resolved_token, self._invalid_or_expired_response()
                 resolved_token = refreshed_token
