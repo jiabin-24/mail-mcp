@@ -11,10 +11,10 @@ from ...schemas.request_models import (
     MailboxSearchInput,
     MailboxUpdateDraftInput,
 )
-from .base import ExchangeServerStoreBase
+from .ews_gateway import EwsGateway
 
 
-class EmailStore(ExchangeServerStoreBase):
+class EmailStore(EwsGateway):
     """基于 Exchange Server EWS 的邮件操作。"""
 
     def list_folders(self) -> list[str]:

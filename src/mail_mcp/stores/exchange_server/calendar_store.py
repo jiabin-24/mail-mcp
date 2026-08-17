@@ -11,10 +11,10 @@ from ...schemas.request_models import (
     CalendarRespondInvitationInput,
     CalendarUpdateEventInput,
 )
-from .base import ExchangeServerStoreBase
+from .ews_gateway import EwsGateway
 
 
-class CalendarStore(ExchangeServerStoreBase):
+class CalendarStore(EwsGateway):
     """基于 Exchange Server EWS 的日历操作。"""
 
     def get_calendar_event(self, req: CalendarGetEventInput) -> dict[str, Any] | None:

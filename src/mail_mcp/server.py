@@ -14,7 +14,8 @@ from .environment_bootstrap import EnvironmentBootstrapper
 from .stores.exchange_online.calendar_store import CalendarStore
 from .stores.exchange_online.email_store import EmailStore
 from .stores.exchange_online.email_send_queue_store import EmailSendQueueStore
-from .stores.graph_store import GraphStoreBase
+from .stores.exchange_online.graph_gateway import GraphGateway
+from .stores.gateway_base import GatewayBase
 from .stores.oauth_client_store import build_oauth_client_store_from_env
 from .stores.oauth_token_store import build_oauth_token_store_from_env
 from .tools.calendar_tools import register_calendar_tools
@@ -62,7 +63,7 @@ configure_default_loggers()
 # 统一构造 token provider 与后端存储实例，供邮件/日历/队列工具共用。
 TOKEN_PROVIDER = RequestTokenProvider.as_callable()
 EMAIL_STORE, CALENDAR_STORE, EMAIL_SEND_QUEUE_STORE = _build_store_backend(TOKEN_PROVIDER)
-GRAPH_STORE = GraphStoreBase(token_provider=TOKEN_PROVIDER)
+GRAPH_STORE = GraphGateway(token_provider=TOKEN_PROVIDER)
 
 _oauth_provider: DynamicOAuthProvider | None = None
 _auth_settings: AuthSettings | None = None

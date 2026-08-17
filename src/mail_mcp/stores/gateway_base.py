@@ -16,16 +16,14 @@ from ..utils.token_log_utils import log_token_value
 GRAPH_QUERY_SAFE = "()':,=-"
 LOGGER = logging.getLogger("mail_mcp")
 
-class GraphStoreBase:
-    """封装 Microsoft Graph 通用访问逻辑，供邮件和日历等存储层复用。"""
+
+class GatewayBase:
+    """Shared Microsoft Graph gateway helpers for mailbox and calendar operations."""
 
     def __init__(self, token_provider: Callable[[], str | None]) -> None:
-        """初始化 Graph 客户端，并准备缓存与鉴权所需的上下文。"""
         self._token_provider = token_provider
         self._graph_base = os.getenv("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0")
-        # 统一缓存 TTL（秒），<=0 表示禁用写入缓存。
         self._cache_ttl = max(0, int(os.getenv("GRAPH_CACHE_TTL_SECONDS") or 300))
-        # 进程内小缓存：减少重复查询当前用户时区与邮箱标识。
         self._cache: TTLCache[Any, Any] = TTLCache(maxsize=128, ttl=max(1, self._cache_ttl))
 
     @property
@@ -33,11 +31,9 @@ class GraphStoreBase:
         return "/me"
 
     def _normalize_limit(self, limit: int) -> int:
-        """将查询上限规范化到合理范围，避免超出 Graph 限制。"""
         return max(1, min(limit, 100))
 
     def _folder_segment(self, folder: str | None) -> str:
-        """将邮箱文件夹名称规范化为 Graph 可识别的路径。"""
         normalized = (folder or "").strip()
         if not normalized:
             return "inbox"
@@ -59,7 +55,6 @@ class GraphStoreBase:
         return quote(normalized, safe="")
 
     def _body_content_type(self, body: str | None) -> str:
-        """根据消息正文内容判断应使用 HTML 还是纯文本格式。"""
         text = (body or "").strip()
         if not text:
             return "Text"
@@ -68,7 +63,6 @@ class GraphStoreBase:
         return "Text"
 
     def _emails_to_recipients(self, emails: list[str] | None) -> list[dict[str, Any]]:
-        """将纯邮箱地址列表转换为 Graph 收件人请求体。"""
         recipients: list[dict[str, Any]] = []
         for email in emails or []:
             cleaned = str(email or "").strip()
@@ -77,7 +71,6 @@ class GraphStoreBase:
         return recipients
 
     def _emails_to_attendees(self, emails: list[str] | None) -> list[dict[str, Any]]:
-        """将纯邮箱地址列表转换为 Graph 会议出席人请求体。"""
         attendees: list[dict[str, Any]] = []
         for email in emails or []:
             cleaned = str(email or "").strip()
@@ -89,7 +82,6 @@ class GraphStoreBase:
         return attendees
 
     def _plain_text_to_html(self, text: str | None) -> str:
-        """对纯文本做 HTML 转义，并将换行转换为 br。"""
         content = str(text or "")
         escaped = (
             content.replace("&", "&amp;")
@@ -99,7 +91,6 @@ class GraphStoreBase:
         return escaped.replace("\r\n", "\n").replace("\n", "<br/>")
 
     def _compose_online_meeting_body(self, description: str | None, existing_body_html: str | None) -> str:
-        """组合在线会议正文，保留既有内容并追加新描述。"""
         new_html = self._plain_text_to_html(description)
         if not new_html.strip():
             return existing_body_html or "<div></div>"
@@ -110,7 +101,6 @@ class GraphStoreBase:
         return combined
 
     def _event_path(self, event_id: str, calendar_id: str | None = None) -> str:
-        """为默认日历或指定日历构造 Graph 事件路径。"""
         encoded_event_id = quote(str(event_id or "").strip(), safe="")
         if calendar_id:
             return f"{self._mailbox_prefix}/calendars/{quote(str(calendar_id), safe='')}/events/{encoded_event_id}"
@@ -124,7 +114,6 @@ class GraphStoreBase:
         prefer_preview: bool = False,
         mailbox_time_zone: str | None = None,
     ) -> list[dict[str, Any]]:
-        """将 Graph 邮件对象映射为统一的响应结构。"""
         return [
             map_graph_message(
                 message,
@@ -141,7 +130,6 @@ class GraphStoreBase:
         events: list[dict[str, Any]] | None,
         mailbox_time_zone: str | None = None,
     ) -> list[dict[str, Any]]:
-        """将 Graph 日历对象映射为统一的响应结构。"""
         return [
             map_graph_calendar_event(event, mailbox_time_zone=mailbox_time_zone)
             for event in (events or [])
@@ -149,11 +137,9 @@ class GraphStoreBase:
         ]
 
     def _cache_scope_key(self) -> str:
-        """基于当前访问令牌生成缓存作用域，避免用户之间的数据串用。"""
         token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
         if not token:
             return "anonymous"
-        # 仅使用 token 指纹作为作用域，避免不同调用者串缓存值。
         return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
 
     def _request(
@@ -164,46 +150,9 @@ class GraphStoreBase:
         headers: dict[str, str] | None = None,
         expect_json: bool = True,
     ) -> dict[str, Any]:
-        """向 Microsoft Graph 发送统一的 HTTP 请求，并附带访问令牌与标准头信息。"""
-        token = self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
-        if not token:
-            raise ValueError(
-                "No Outlook token available. Provide bearer token in Authorization header or set OUTLOOK_ACCESS_TOKEN."
-            )
-
-        log_token_value(
-            LOGGER,
-            token,
-            full_key="graph_request_token",
-            preview_key="graph_request_token_preview",
-        )
-        LOGGER.info("Graph request: %s %s", method, path)
-
-        req_headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/json",
-        }
-        if headers:
-            req_headers.update(headers)
-
-        with httpx.Client(base_url=self._graph_base, timeout=30.0) as client:
-            response = client.request(method, path, headers=req_headers, json=json)
-
-        if response.status_code >= 400:
-            try:
-                body = response.json()
-            except ValueError:
-                body = {"error": response.text}
-            raise ValueError(f"Graph API request failed ({response.status_code}): {body}")
-
-        if not expect_json:
-            return {}
-        if not response.content:
-            return {}
-        return response.json()
+        raise NotImplementedError("A concrete gateway implementation must override _request().")
 
     def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
-        """查询租户中的用户列表，可按关键字过滤并返回邮箱和 UPN 等字段。"""
         safe_limit = self._normalize_limit(limit)
         headers = {"ConsistencyLevel": "eventual"}
         base_query_prefix = (
@@ -254,7 +203,6 @@ class GraphStoreBase:
         ]
 
     def get_user_time_zone(self, fallback: str = "UTC") -> dict[str, str]:
-        """读取当前用户邮箱的时区配置；若未配置则返回 fallback。"""
         cache_key = f"{self._cache_scope_key()}:mailbox_time_zone"
         cached = self._cache.get(cache_key)
         if isinstance(cached, dict):
@@ -276,13 +224,11 @@ class GraphStoreBase:
         return {"time_zone": fallback, "source": "fallback"}
 
     def get_mailbox_time_zone_if_available(self) -> str | None:
-        """返回当前邮箱时区；如果未配置，则返回 None。"""
         time_zone_info = self.get_user_time_zone(fallback="")
         resolved = str(time_zone_info.get("time_zone", "") or "").strip()
         return resolved or None
 
     def resolve_current_user_upn(self) -> str:
-        """解析当前登录用户的邮箱或 UPN，用于后续邮件、日历等操作中的用户识别。"""
         cache_key = f"{self._cache_scope_key()}:current_user_upn"
         cached = self._cache.get(cache_key)
         if isinstance(cached, str) and cached:
@@ -302,7 +248,6 @@ class GraphStoreBase:
 
 
 def recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
-    """从 Graph 收件人列表中提取所有邮箱地址。"""
     result: list[str] = []
     for recipient in recipients:
         address = recipient_address(recipient)
@@ -312,6 +257,10 @@ def recipient_addresses(recipients: list[dict[str, Any]]) -> list[str]:
 
 
 def recipient_address(recipient: dict[str, Any]) -> str:
-    """从单个收件人对象中提取邮箱地址字符串。"""
     email_address = recipient.get("emailAddress", {}) if isinstance(recipient, dict) else {}
     return str(email_address.get("address", "") or "")
+
+
+GraphStoreBase = GatewayBase
+
+__all__ = ["GatewayBase", "GraphStoreBase", "recipient_addresses", "recipient_address"]

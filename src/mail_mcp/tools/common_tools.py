@@ -2,12 +2,12 @@ from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 
-from ..stores.graph_store import GraphStoreBase
+from ..stores.gateway_base import GatewayBase
 from ..tools.tool_error_handler import tool_exception_logging
 from ..utils.datetime_utils import resolve_zone_info
 
 
-def register_common_tools(app: FastMCP, graph_store: GraphStoreBase) -> None:
+def register_common_tools(app: FastMCP, graph_store: GatewayBase) -> None:
     @app.tool()
     @tool_exception_logging
     def get_current_time() -> dict[str, str]:

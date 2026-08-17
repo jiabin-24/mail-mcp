@@ -7,14 +7,14 @@ from urllib.parse import quote
 import httpx
 
 from ..email_send_queue_store import EmailSendQueueStoreBase
-from ..graph_store import GraphStoreBase
+from .graph_gateway import GraphGateway
 
 
-class EmailSendQueueStore(EmailSendQueueStoreBase, GraphStoreBase):
-    """Azure Table 定时发送任务的 Graph 适配器。"""
+class EmailSendQueueStore(EmailSendQueueStoreBase, GraphGateway):
+    """Azure Table 定时发送任务的 Exchange Online Graph 适配器。"""
 
     def __init__(self, token_provider: Callable[[], str | None]) -> None:
-        GraphStoreBase.__init__(self, token_provider=token_provider)
+        GraphGateway.__init__(self, token_provider=token_provider)
         EmailSendQueueStoreBase.__init__(self, token_provider, table_name=os.getenv("AZURE_STORAGE_TABLE_NAME"))
 
     def _resolve_user_upn(self) -> str:

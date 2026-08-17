@@ -247,7 +247,8 @@ def build_table_context_from_env(table_name: str, *, optional: bool = False) -> 
     )
     service_client = TableServiceClient(endpoint=account_url, credential=credential)
     table_client = service_client.get_table_client(table_name=table_name)
-    _ensure_table_exists(table_client)
+    if not _ensure_table_exists(table_client, optional=optional):
+        return None
 
     return AzureTableContext(
         account_name=account_name,
@@ -257,17 +258,26 @@ def build_table_context_from_env(table_name: str, *, optional: bool = False) -> 
     )
 
 
-def _ensure_table_exists(table_client: TableClient) -> None:
-    """确保目标表存在；如果当前身份仅有读写权限而不能创建表，则忽略该异常。"""
+def _ensure_table_exists(table_client: TableClient, *, optional: bool = False) -> bool:
+    """Ensure the table exists; if the current identity cannot create tables, return False only in optional mode."""
     try:
         table_client.create_table()
+        return True
     except ResourceExistsError:
-        return
-    except Exception:
-        # 某些 Azure 身份仅允许读写已存在的表，而不能创建表。
-        # 此时不应阻止启动；客户端仍可继续操作已有表，真正的失败会在
-        # 实际访问时再暴露出来。
-        return
+        return True
+    except Exception as exc:
+        message = str(exc).lower()
+        is_auth_failure = (
+            "not authorized" in message
+            or "authorization" in message
+            or "forbidden" in message
+            or "permission" in message
+            or "unauthorized" in message
+        )
+        if optional and is_auth_failure:
+            return False
+        # Other table-creation failures are ignored so startup is not blocked when the table already exists.
+        return True
 
 
 def _dumps_json(value: dict[str, Any]) -> str:

@@ -5,7 +5,7 @@ from html import escape
 from typing import Any
 from urllib.parse import quote
 
-from ..graph_store import GraphStoreBase
+from .graph_gateway import GraphGateway
 from ...models import map_graph_calendar_event
 from ...schemas.request_models import (
     CalendarCreateEventInput,
@@ -25,7 +25,7 @@ GRAPH_QUERY_SAFE = "()':,=-"
 GRAPH_DATETIME_SAFE = "-:.TZ"
 
 
-class CalendarStore(GraphStoreBase):
+class CalendarStore(GraphGateway):
     """基于 Microsoft Graph 日历 API 的日历相关操作。"""
 
     def get_calendar_event(self, req: CalendarGetEventInput) -> dict[str, Any] | None:

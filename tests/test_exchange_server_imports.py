@@ -1,5 +1,5 @@
 from mail_mcp.stores.exchange_server import CalendarStore, EmailSendQueueStore, EmailStore
-from mail_mcp.stores.exchange_server.base import ExchangeServerStoreBase
+from mail_mcp.stores.exchange_server.ews_gateway import EwsGateway
 
 
 def test_exchange_server_store_exports() -> None:
@@ -11,7 +11,7 @@ def test_exchange_server_store_exports() -> None:
 def test_exchange_server_base_credentials_builds_oauth_token(monkeypatch) -> None:
     monkeypatch.setenv("EXCHANGE_SERVER_CLIENT_ID", "client-id")
     monkeypatch.setenv("EXCHANGE_SERVER_CLIENT_SECRET", "client-secret")
-    store = ExchangeServerStoreBase(token_provider=lambda: "Bearer my-access-token")
+    store = EwsGateway(token_provider=lambda: "Bearer my-access-token")
 
     creds = store._credentials()
 
@@ -37,7 +37,7 @@ def test_exchange_server_base_credentials_exchange_via_obo(monkeypatch) -> None:
     import msal
     monkeypatch.setattr(msal, "ConfidentialClientApplication", FakeConfidentialClientApplication)
 
-    store = ExchangeServerStoreBase(token_provider=lambda: "user-token")
+    store = EwsGateway(token_provider=lambda: "user-token")
     creds = store._credentials()
 
     assert creds.access_token["access_token"] == "obo-access-token"

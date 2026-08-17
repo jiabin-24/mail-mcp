@@ -11,10 +11,14 @@ from exchangelib import Account, Configuration, DELEGATE, OAUTH2
 from exchangelib.credentials import OAuth2Credentials
 from oauthlib.oauth2 import OAuth2Token
 
-class ExchangeServerStoreBase:
-    """Exchange Server EWS 连接及公共辅助逻辑。"""
+from ..gateway_base import GatewayBase
+
+
+class EwsGateway(GatewayBase):
+    """Exchange Server EWS gateway with configuration and shared helper logic."""
 
     def __init__(self, token_provider: Callable[[], str | None] | None = None) -> None:
+        super().__init__(token_provider=token_provider or (lambda: None))
         self._token_provider = token_provider
         raw_server_url = (os.getenv("EXCHANGE_SERVER_URL") or "").strip()
         self._server_url = raw_server_url.removeprefix("https://").removeprefix("http://").rstrip("/")
@@ -204,3 +208,14 @@ class ExchangeServerStoreBase:
         if isinstance(value, str):
             return value
         return getattr(value, "id", str(value))
+
+    @staticmethod
+    def _strip_bearer_prefix(token: str | None) -> str:
+        if not token:
+            return ""
+        return token.replace("Bearer ", "", 1).strip()
+
+
+ExchangeServerStoreBase = EwsGateway
+
+__all__ = ["EwsGateway", "ExchangeServerStoreBase"]

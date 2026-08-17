@@ -4,7 +4,8 @@ from html import escape
 from typing import Any
 from urllib.parse import quote
 
-from ..graph_store import GraphStoreBase, recipient_addresses
+from ..gateway_base import recipient_addresses
+from .graph_gateway import GraphGateway
 from ...models import map_graph_message
 from ...schemas.request_models import (
     MailboxComposeInput,
@@ -21,7 +22,7 @@ from ...utils.datetime_utils import normalize_mail_filter_time_literals
 GRAPH_QUERY_SAFE = "()':,=-"
 
 
-class EmailStore(GraphStoreBase):
+class EmailStore(GraphGateway):
     """基于 Microsoft Graph 邮箱 API 的邮件相关操作。"""
 
     def _resolved_mailbox_time_zone(self) -> str:

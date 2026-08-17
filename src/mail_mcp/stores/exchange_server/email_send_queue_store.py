@@ -4,10 +4,10 @@ import os
 from typing import Callable
 
 from ..email_send_queue_store import EmailSendQueueStoreBase
-from .base import ExchangeServerStoreBase
+from .ews_gateway import EwsGateway
 
 
-class EmailSendQueueStore(EmailSendQueueStoreBase, ExchangeServerStoreBase):
+class EmailSendQueueStore(EmailSendQueueStoreBase, EwsGateway):
     """共享 Azure Table 队列契约的 EWS 适配器。
 
     这个后端保留与 Graph 版本一致的 API 入口，但当前 EWS 环境下
@@ -15,7 +15,7 @@ class EmailSendQueueStore(EmailSendQueueStoreBase, ExchangeServerStoreBase):
     """
 
     def __init__(self, token_provider: Callable[[], str | None] | None = None) -> None:
-        ExchangeServerStoreBase.__init__(self, token_provider=token_provider)
+        EwsGateway.__init__(self, token_provider=token_provider)
         EmailSendQueueStoreBase.__init__(self, token_provider or (lambda: None), table_name=os.getenv("AZURE_STORAGE_TABLE_NAME"))
 
     def _resolve_user_upn(self) -> str:

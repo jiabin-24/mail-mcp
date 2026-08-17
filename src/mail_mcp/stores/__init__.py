@@ -9,7 +9,9 @@ from .exchange_online import CalendarStore, EmailSendQueueStore, EmailStore
 from .exchange_server import CalendarStore as ExchangeServerCalendarStore
 from .exchange_server import EmailSendQueueStore as ExchangeServerEmailSendQueueStore
 from .exchange_server import EmailStore as ExchangeServerEmailStore
-from .graph_store import GraphStoreBase
+from .gateway_base import GatewayBase
+
+GraphStoreBase = GatewayBase
 
 __all__ = [
     "CalendarStore",
@@ -18,5 +20,6 @@ __all__ = [
     "ExchangeServerCalendarStore",
     "ExchangeServerEmailSendQueueStore",
     "ExchangeServerEmailStore",
+    "GatewayBase",
     "GraphStoreBase",
 ]
