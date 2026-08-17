@@ -1,3 +1,4 @@
+from ..tools.tool_error_handler import tool_exception_logging
 from ..schemas.request_models import (
     MailboxCreateSendJobInput,
     MailboxListSendJobsInput,
@@ -36,6 +37,7 @@ def register_email_queue_tools(
     _email_store: EmailStore,
 ) -> None:
     @app.tool()
+    @tool_exception_logging
     def mailbox_create_email_draft_send_job(
         draft_email_id: str,
         schedule_send_time: str,
@@ -61,6 +63,7 @@ def register_email_queue_tools(
         return store.enqueue_send_job(req)
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_list_pending_email_draft_send_jobs(limit: int = 20) -> list[dict]:
         """List pending or failed scheduled send jobs for the current mailbox."""
         store = _require_queue_store(queue_store)
@@ -69,6 +72,7 @@ def register_email_queue_tools(
         return store.list_pending_jobs(limit=req.limit)
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_revoke_email_draft_send_job(job_id: str) -> dict:
         """Cancel a scheduled send job and mark it as revoked in Azure Table Storage."""
         store = _require_queue_store(queue_store)
@@ -89,6 +93,7 @@ def register_email_queue_tools(
         }
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_update_email_draft_send_job_schedule(
         job_id: str,
         schedule_send_time: str,

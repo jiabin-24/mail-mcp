@@ -51,3 +51,17 @@ def configure_default_loggers() -> None:
     """配置本服务默认使用的日志命名空间。"""
     configure_namespace_logger("mcp", "mail_mcp_mcp_stream_handler")
     configure_namespace_logger("mail_mcp", "mail_mcp_namespace_stream_handler")
+
+    # Azure SDK 的 blob / pipeline 日志通常很嘈杂；默认仅展示 warning 及以上，避免控制台被淹没。
+    for noisy_logger_name in (
+        "azure",
+        "azure.core",
+        "azure.storage",
+        "azure.storage.blob",
+        "azure.core.pipeline",
+        "azure.core.pipeline.policies",
+        "urllib3",
+    ):
+        logger = logging.getLogger(noisy_logger_name)
+        logger.setLevel(logging.WARNING)
+        logger.propagate = False

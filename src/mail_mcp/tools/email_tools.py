@@ -1,4 +1,5 @@
 from ..stores.exchange_online.email_store import EmailStore
+from ..tools.tool_error_handler import tool_exception_logging
 from ..schemas.request_models import (
     MailboxComposeInput,
     MailboxDraftIdInput,
@@ -12,11 +13,13 @@ from ..schemas.request_models import (
 
 def register_email_tools(app, email_store: EmailStore) -> None:
     @app.tool()
+    @tool_exception_logging
     def mailbox_list_folders() -> list[str]:
         """List all available folders in the current mailbox."""
         return email_store.list_folders()
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_list_messages(folder: str = "inbox", limit: int = 20) -> list[dict]:
         """List messages from a specific mailbox folder."""
         req = validate_input(
@@ -26,6 +29,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         return email_store.list_messages(req)
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_get_message(message_id: str) -> dict:
         """Retrieve a message by message ID."""
         req = validate_input(MailboxGetMessageInput, {"message_id": message_id})
@@ -35,6 +39,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         return message
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_search(
         search: str | None = None,
         filter: str | None = None,
@@ -56,6 +61,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         return email_store.search_messages(req)
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_compose(
         to: list[str],
         subject: str,
@@ -77,6 +83,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         return email_store.create_draft(req)
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_reply_compose(message_id: str, body: str) -> dict:
         """Create a reply draft based on an existing message while preserving thread context."""
         req = validate_input(
@@ -86,6 +93,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         return email_store.create_reply_draft(req)
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_update_draft(
         draft_id: str,
         to: list[str] | None = None,
@@ -112,6 +120,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         return updated
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_send_draft(draft_id: str) -> dict:
         """Send a draft email from the Outlook mailbox."""
         req = validate_input(MailboxDraftIdInput, {"draft_id": draft_id})
@@ -121,6 +130,7 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         return sent
 
     @app.tool()
+    @tool_exception_logging
     def mailbox_revoke_draft(draft_id: str) -> dict:
         """Discard and delete a draft email from the Outlook mailbox."""
         req = validate_input(MailboxDraftIdInput, {"draft_id": draft_id})

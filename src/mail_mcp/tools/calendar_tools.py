@@ -3,6 +3,7 @@ from typing import Literal
 from mcp.server.fastmcp import FastMCP
 
 from ..stores.exchange_online.calendar_store import CalendarStore
+from ..tools.tool_error_handler import tool_exception_logging
 from ..schemas.request_models import (
     CalendarCreateEventInput,
     CalendarDeleteEventInput,
@@ -16,6 +17,7 @@ from ..schemas.request_models import (
 
 def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None:
     @app.tool()
+    @tool_exception_logging
     def calendar_list_events(
         start: str | None = None,
         end: str | None = None,
@@ -30,6 +32,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         return calendar_store.list_calendar_events(req)
 
     @app.tool()
+    @tool_exception_logging
     def calendar_get_event(event_id: str, calendar_id: str | None = None) -> dict:
         """Retrieve a calendar event by ID."""
         req = validate_input(
@@ -43,6 +46,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         return event
 
     @app.tool()
+    @tool_exception_logging
     def calendar_create_event(
         subject: str,
         start: str,
@@ -72,6 +76,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         return calendar_store.create_calendar_event(req)
 
     @app.tool()
+    @tool_exception_logging
     def calendar_update_event(
         event_id: str,
         subject: str | None = None,
@@ -106,6 +111,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         return updated
 
     @app.tool()
+    @tool_exception_logging
     def calendar_delete_event(event_id: str, calendar_id: str | None = None) -> dict:
         """Delete a calendar event from the Outlook mailbox."""
         req = validate_input(
@@ -118,6 +124,7 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
         return deleted
 
     @app.tool()
+    @tool_exception_logging
     def calendar_respond_invitation(
         event_id: str,
         response: Literal["accept", "decline", "tentative"],
