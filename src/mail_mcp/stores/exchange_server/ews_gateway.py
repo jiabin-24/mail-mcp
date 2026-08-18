@@ -4,7 +4,7 @@ import base64
 import json
 import os
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import msal
 from exchangelib import Account, Configuration, DELEGATE, OAUTH2
@@ -17,8 +17,8 @@ from ..gateway_base import GatewayBase
 class EwsGateway(GatewayBase):
     """Exchange Server EWS gateway with configuration and shared helper logic."""
 
-    def __init__(self, token_provider: Callable[[], str | None] | None = None) -> None:
-        super().__init__(token_provider=token_provider or (lambda: None))
+    def __init__(self, token_provider: Callable[[], str | None]) -> None:
+        super().__init__(token_provider=token_provider)
         self._token_provider = token_provider
         raw_server_url = (os.getenv("EXCHANGE_SERVER_URL") or "").strip()
         self._server_url = raw_server_url.removeprefix("https://").removeprefix("http://").rstrip("/")
@@ -158,15 +158,15 @@ class EwsGateway(GatewayBase):
         name = self._normalize_folder_name(folder)
         mapping = {
             "inbox": account.inbox,
-            "sentitems": account.sent_items,
+            "sentitems": account.sent,
             "drafts": account.drafts,
             "archive": getattr(account, "archive", None) or account.root,
-            "deleteditems": account.deleted_items,
-            "junkemail": account.junk_email,
+            "deleteditems": account.trash,
+            "junkemail": account.junk,
         }
         if name in mapping and mapping[name] is not None:
             return mapping[name]
-        return account.root / name
+        return cast(Any, account.root) / name
 
     def _utc_iso(self, value: Any) -> str:
         if value is None:

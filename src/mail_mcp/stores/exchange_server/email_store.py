@@ -20,7 +20,7 @@ class EmailStore(EwsGateway):
     def list_folders(self) -> list[str]:
         account = self._build_account()
         folders = []
-        for folder in account.root.children:
+        for folder in account.msg_folder_root.children:
             folders.append(folder.name)
         return folders
 
