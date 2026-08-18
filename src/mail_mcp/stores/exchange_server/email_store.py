@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -14,6 +15,8 @@ from ...schemas.request_models import (
     MailboxUpdateDraftInput,
 )
 from .ews_gateway import EwsGateway
+
+LOGGER = logging.getLogger(__name__)
 
 
 class EmailStore(EwsGateway):
@@ -54,7 +57,12 @@ class EmailStore(EwsGateway):
         query = query.order_by(*order_by_args)
         items = query[: effective_limit]
         results = [self._map_message(item, folder=req.folder) for item in items]
-        print(f"search_messages: found {len(results)} results for filter={req.filter}, search={req.search}")
+        LOGGER.info(
+            "search_messages: found %s results for filter=%s, search=%s",
+            len(results),
+            req.filter,
+            req.search,
+        )
         return results
 
     @staticmethod
