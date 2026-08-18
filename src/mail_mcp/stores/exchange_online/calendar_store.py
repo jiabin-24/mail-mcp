@@ -17,7 +17,7 @@ from ...schemas.request_models import (
 )
 from ...utils.datetime_utils import (
     normalize_query_datetime_with_mailbox_timezone,
-    to_utc_iso_from_text,
+    to_utc_iso,
 )
 
 
@@ -39,12 +39,12 @@ class CalendarStore(GraphGateway):
 
     def create_calendar_event(self, req: CalendarCreateEventInput) -> dict[str, Any]:
         mailbox_time_zone = self.get_mailbox_time_zone_if_available()
-        start_utc = to_utc_iso_from_text(
+        start_utc = to_utc_iso(
             req.start,
             preferred_time_zone=req.time_zone,
             mailbox_time_zone=mailbox_time_zone,
         )
-        end_utc = to_utc_iso_from_text(
+        end_utc = to_utc_iso(
             req.end,
             preferred_time_zone=req.time_zone,
             mailbox_time_zone=mailbox_time_zone,
@@ -92,12 +92,12 @@ class CalendarStore(GraphGateway):
         if req.subject is not None:
             patch_payload["subject"] = req.subject
         if start_value and end_value:
-            start_utc = to_utc_iso_from_text(
+            start_utc = to_utc_iso(
                 start_value,
                 preferred_time_zone=req.time_zone,
                 mailbox_time_zone=mailbox_time_zone,
             )
-            end_utc = to_utc_iso_from_text(
+            end_utc = to_utc_iso(
                 end_value,
                 preferred_time_zone=req.time_zone,
                 mailbox_time_zone=mailbox_time_zone,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+from datetime import UTC, datetime
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -11,6 +12,7 @@ from cachetools import TTLCache
 from mail_mcp.utils.search_token_tools import expand_search_tokens
 
 from ..models import map_graph_calendar_event, map_graph_message
+from ..utils.datetime_utils import parse_iso_datetime
 from ..utils.token_log_utils import log_token_value
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -151,6 +153,13 @@ class GatewayBase:
         expect_json: bool = True,
     ) -> dict[str, Any]:
         raise NotImplementedError("A concrete gateway implementation must override _request().")
+
+    @staticmethod
+    def _parse_iso_datetime(value: str) -> datetime:
+        dt = parse_iso_datetime(value)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
 
     def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
         safe_limit = self._normalize_limit(limit)

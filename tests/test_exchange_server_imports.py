@@ -1,3 +1,9 @@
+from types import SimpleNamespace
+
+from datetime import datetime
+
+from mail_mcp.schemas.request_models import MailboxGetMessageInput
+from mail_mcp.schemas.request_models import MailboxSearchInput
 from mail_mcp.stores.exchange_server import CalendarStore, EmailSendQueueStore, EmailStore
 from mail_mcp.stores.exchange_server.ews_gateway import EwsGateway
 
@@ -50,3 +56,131 @@ def test_exchange_server_base_credentials_exchange_via_obo(monkeypatch) -> None:
 
     assert creds.access_token["access_token"] == "obo-access-token"
     assert creds.access_token["token_type"] == "Bearer"
+
+
+def test_exchange_server_email_store_uses_ews_folder_get_for_item_lookup(monkeypatch) -> None:
+    store = EmailStore(token_provider=lambda: "Bearer my-access-token")
+
+    class FakeFolder:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(
+                id="msg-123",
+                subject="hello",
+                body="body text",
+                sender=SimpleNamespace(email_address="sender@example.com"),
+                to_recipients=[],
+                cc_recipients=[],
+                bcc_recipients=[],
+                is_draft=False,
+                datetime_received="2024-01-01T00:00:00+00:00",
+                datetime_sent="2024-01-01T00:00:00+00:00",
+                text_body="body text",
+            )
+
+    fake_account = SimpleNamespace(root=FakeFolder(), inbox=FakeFolder(), drafts=FakeFolder(), sent=FakeFolder())
+    monkeypatch.setattr(store, "_build_account", lambda: fake_account)
+
+    result = store.get_message(MailboxGetMessageInput(message_id="msg-123"))
+
+    assert result["id"] == "msg-123"
+    assert fake_account.inbox.calls == [{"id": "msg-123"}]
+
+
+def test_exchange_server_email_store_parses_received_datetime_filter() -> None:
+    parsed = EmailStore._parse_received_datetime_filter(
+        "receivedDateTime ge 2026-08-01T00:00:00+08:00 and receivedDateTime lt 2026-09-01T00:00:00+08:00"
+    )
+
+    assert parsed["datetime_received__gte"] == datetime.fromisoformat("2026-08-01T00:00:00+08:00")
+    assert parsed["datetime_received__lt"] == datetime.fromisoformat("2026-09-01T00:00:00+08:00")
+
+
+def test_exchange_server_email_store_search_uses_server_side_query(monkeypatch) -> None:
+    store = EmailStore(token_provider=lambda: "Bearer my-access-token")
+
+    class FakeQuery:
+        def __init__(self):
+            self.filter_calls = []
+            self.order_by_calls = []
+
+        def filter(self, **kwargs):
+            self.filter_calls.append(kwargs)
+            return self
+
+        def order_by(self, *args):
+            self.order_by_calls.append(args)
+            return self
+
+        def __getitem__(self, key):
+            return [
+                SimpleNamespace(
+                    id="msg-001",
+                    subject="monthly",
+                    body="body",
+                    sender=SimpleNamespace(email_address="sender@example.com"),
+                    to_recipients=[],
+                    cc_recipients=[],
+                    bcc_recipients=[],
+                    is_draft=False,
+                    datetime_received="2026-08-17T00:00:00+00:00",
+                    datetime_sent="2026-08-17T00:00:00+00:00",
+                    text_body="body",
+                )
+            ]
+
+    fake_query = FakeQuery()
+    fake_folder = SimpleNamespace(all=lambda: fake_query)
+    monkeypatch.setattr(store, "_folder_for_name", lambda folder: fake_folder)
+
+    req = MailboxSearchInput(
+        filter="receivedDateTime ge 2026-08-01T00:00:00+08:00 and receivedDateTime lt 2026-09-01T00:00:00+08:00",
+        orderby="receivedDateTime desc",
+        limit=20,
+        folder="inbox",
+    )
+    result = store.search_messages(req)
+
+    assert result[0]["id"] == "msg-001"
+    assert fake_query.filter_calls[0] == {
+        "datetime_received__gte": datetime.fromisoformat("2026-08-01T00:00:00+08:00"),
+        "datetime_received__lt": datetime.fromisoformat("2026-09-01T00:00:00+08:00"),
+    }
+    assert fake_query.order_by_calls[0] == ("-datetime_received",)
+
+
+def test_exchange_server_email_store_search_hard_caps_limit_to_100(monkeypatch) -> None:
+    store = EmailStore(token_provider=lambda: "Bearer my-access-token")
+
+    class FakeQuery:
+        def __init__(self):
+            self.slice_keys = []
+
+        def filter(self, **kwargs):
+            return self
+
+        def order_by(self, *args):
+            return self
+
+        def __getitem__(self, key):
+            self.slice_keys.append(key)
+            return []
+
+    fake_query = FakeQuery()
+    fake_folder = SimpleNamespace(all=lambda: fake_query)
+    monkeypatch.setattr(store, "_folder_for_name", lambda folder: fake_folder)
+
+    req = MailboxSearchInput.model_construct(
+        filter=None,
+        search=None,
+        orderby="receivedDateTime desc",
+        limit=500,
+        folder="inbox",
+    )
+    store.search_messages(req)
+
+    assert len(fake_query.slice_keys) == 1
+    assert fake_query.slice_keys[0].stop == 100

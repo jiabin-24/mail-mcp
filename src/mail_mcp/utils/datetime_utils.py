@@ -68,18 +68,27 @@ def resolve_zone_info(time_zone: str | None) -> tzinfo | None:
         return timezone(timedelta(minutes=fixed_offset_minutes))
 
 
-def to_utc_iso_from_datetime(
-    value: datetime,
+def parse_iso_datetime(value: str) -> datetime:
+    """将 ISO 时间文本解析为 datetime（支持 Z 后缀）。"""
+    raw = (value or "").strip()
+    if not raw:
+        raise ValueError("datetime text is required")
+
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"invalid datetime value: {value}") from exc
+
+
+def to_utc_iso(
+    value: datetime | str,
     *,
     preferred_time_zone: str | None = None,
     mailbox_time_zone: str | None = None,
 ) -> str:
-    """将带时区或无时区的 datetime 转成 UTC ISO 8601 字符串。
-
-    若传入时间没有 tzinfo，则根据 preferred_time_zone / mailbox_time_zone
-    选择一个时区来解释该时间，再统一转换到 UTC。
-    """
-    dt = value
+    """将 datetime 或 ISO 文本统一转换为 UTC ISO 8601 字符串。"""
+    dt = parse_iso_datetime(value) if isinstance(value, str) else value
     if dt.tzinfo is None:
         effective_time_zone = (preferred_time_zone or mailbox_time_zone or "UTC").strip() or "UTC"
         zone = resolve_zone_info(effective_time_zone)
@@ -88,34 +97,6 @@ def to_utc_iso_from_datetime(
         dt = dt.replace(tzinfo=zone)
 
     return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def to_utc_iso_from_text(
-    value: str,
-    *,
-    preferred_time_zone: str | None = None,
-    mailbox_time_zone: str | None = None,
-) -> str:
-    """将 ISO 时间文本转换成 UTC 的 ISO 8601 字符串。
-
-    若字符串末尾为 Z，则视为 UTC；若无时区信息，则按 mailbox_time_zone
-    解释并转换为 UTC。 
-    """
-    raw = (value or "").strip()
-    if not raw:
-        raise ValueError("datetime text is required")
-
-    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
-    try:
-        dt = datetime.fromisoformat(normalized)
-    except ValueError as exc:
-        raise ValueError(f"invalid datetime value: {value}") from exc
-
-    return to_utc_iso_from_datetime(
-        dt,
-        preferred_time_zone=preferred_time_zone,
-        mailbox_time_zone=mailbox_time_zone,
-    )
 
 
 def normalize_query_datetime_with_mailbox_timezone(value: str, mailbox_time_zone: str | None) -> str:
@@ -131,7 +112,7 @@ def normalize_query_datetime_with_mailbox_timezone(value: str, mailbox_time_zone
     if TIMEZONE_SUFFIX_REGEX.search(raw):
         return raw
 
-    return to_utc_iso_from_text(raw, mailbox_time_zone=mailbox_time_zone)
+    return to_utc_iso(raw, mailbox_time_zone=mailbox_time_zone)
 
 
 def normalize_mail_filter_time_literals(filter_text: str, mailbox_time_zone: str | None) -> str:

@@ -10,6 +10,8 @@ from azure.core.exceptions import ResourceExistsError
 from azure.data.tables import TableClient, TableServiceClient
 from azure.identity import ClientSecretCredential
 
+from ..utils.datetime_utils import to_utc_iso
+
 
 @dataclass
 class AzureTableContext:
@@ -304,8 +306,7 @@ def _loads_json(value: Any) -> dict[str, Any] | None:
 
 
 def _to_utc_iso(value: datetime) -> str:
-    utc_value = value.astimezone(UTC)
-    return utc_value.isoformat().replace("+00:00", "Z")
+    return to_utc_iso(value)
 
 
 def _to_int(value: Any) -> int | None:

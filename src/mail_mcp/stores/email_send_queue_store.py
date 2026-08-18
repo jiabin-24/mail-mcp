@@ -9,7 +9,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.data.tables import UpdateMode
 
 from ..schemas.request_models import MailboxCreateSendJobInput, MailboxUpdateSendJobScheduleInput
-from ..utils.datetime_utils import to_utc_iso_from_datetime
+from ..utils.datetime_utils import parse_iso_datetime, to_utc_iso
 from .table_storage import build_table_context_from_env
 
 
@@ -49,7 +49,7 @@ class EmailSendQueueStoreBase:
             "senttime": self._to_queue_time(req.sent_time) if req.sent_time else "",
             "subject": req.subject or "",
             "userupn": user_upn,
-            "createdtime": to_utc_iso_from_datetime(datetime.now(tz=UTC)),
+            "createdtime": to_utc_iso(datetime.now(tz=UTC)),
         }
         self._table_client.create_entity(entity=entity)
 
@@ -101,7 +101,7 @@ class EmailSendQueueStoreBase:
                 "PartitionKey": user_upn,
                 "RowKey": job_id,
                 "status": "cancel",
-                "updatedtime": to_utc_iso_from_datetime(datetime.now(tz=UTC)),
+                "updatedtime": to_utc_iso(datetime.now(tz=UTC)),
             },
             mode=UpdateMode.MERGE,
         )
@@ -122,7 +122,7 @@ class EmailSendQueueStoreBase:
                 "status": "scheduled",
                 "senttime": "",
                 "lasterror": "",
-                "updatedtime": to_utc_iso_from_datetime(datetime.now(tz=UTC)),
+                "updatedtime": to_utc_iso(datetime.now(tz=UTC)),
             },
             mode=UpdateMode.MERGE,
         )
@@ -163,7 +163,7 @@ class EmailSendQueueStoreBase:
                     partition_key=partition_key,
                     row_key=row_key,
                     status="sent",
-                    sent_time=to_utc_iso_from_datetime(datetime.now(tz=UTC)),
+                    sent_time=to_utc_iso(datetime.now(tz=UTC)),
                 )
                 sent_count += 1
                 sent.append({"job_id": row_key, "draftemailid": draft_id})
@@ -218,7 +218,7 @@ class EmailSendQueueStoreBase:
             "PartitionKey": partition_key,
             "RowKey": row_key,
             "status": status,
-            "updatedtime": to_utc_iso_from_datetime(datetime.now(tz=UTC)),
+            "updatedtime": to_utc_iso(datetime.now(tz=UTC)),
         }
         if sent_time:
             entity["senttime"] = sent_time
@@ -236,7 +236,7 @@ class EmailSendQueueStoreBase:
         if value is None:
             return ""
         if hasattr(value, "isoformat"):
-            return to_utc_iso_from_datetime(value)
+            return to_utc_iso(value)
         return str(value)
 
 
@@ -244,7 +244,7 @@ def _parse_utc_time(value: str) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+        return parse_iso_datetime(value).astimezone(UTC)
     except ValueError:
         return None
 

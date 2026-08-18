@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC
 from typing import Any, Callable, cast
 
 import msal
@@ -167,6 +167,19 @@ class EwsGateway(GatewayBase):
         if name in mapping and mapping[name] is not None:
             return mapping[name]
         return cast(Any, account.root) / name
+
+    def _get_item_by_id(self, item_id: str, folder: str | None = None) -> Any:
+        account = self._build_account()
+        folder_obj = self._folder_for_name(folder)
+        try:
+            return folder_obj.get(id=item_id)
+        except Exception:
+            if folder_obj is not account.root:
+                try:
+                    return account.root.get(id=item_id)
+                except Exception:
+                    pass
+            raise
 
     def _utc_iso(self, value: Any) -> str:
         if value is None:

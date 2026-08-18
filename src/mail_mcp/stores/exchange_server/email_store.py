@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Any
 
 from ...schemas.request_models import (
@@ -30,31 +32,91 @@ class EmailStore(EwsGateway):
         return [self._map_message(item, folder=req.folder) for item in items]
 
     def get_message(self, req: MailboxGetMessageInput) -> dict[str, Any] | None:
-        account = self._build_account()
-        message = account.get_item(req.message_id)
+        message = self._get_item_by_id(req.message_id, folder="inbox")
         return self._map_message(message, folder="inbox")
 
     def search_messages(self, req: MailboxSearchInput) -> list[dict[str, Any]]:
         folder = self._folder_for_name(req.folder)
-        results: list[dict[str, Any]] = []
-        for item in folder.all():
-            haystack = " ".join(
-                [
-                    self._safe_text(item.subject),
-                    self._safe_text(item.body),
-                    self._safe_text(item.sender.email_address if getattr(item, "sender", None) else ""),
-                ]
-            ).lower()
-            filter_ok = True
-            if req.filter:
-                filter_ok = req.filter.lower() in haystack
-            if req.search:
-                filter_ok = filter_ok and (req.search.lower() in haystack)
-            if filter_ok:
-                results.append(self._map_message(item, folder=req.folder))
-            if len(results) >= req.limit:
-                break
+        effective_limit = max(1, min(int(req.limit), 100))
+        search_text = (req.search or "").strip()
+        filter_text = (req.filter or "").strip()
+        filter_kwargs = self._parse_received_datetime_filter(filter_text)
+        order_by_args = self._parse_orderby(req.orderby)
+        query = folder.all()
+        if filter_kwargs:
+            query = query.filter(**filter_kwargs)
+        elif filter_text:
+            query = query.filter(subject__icontains=filter_text)
+
+        if search_text:
+            query = query.filter(subject__icontains=search_text)
+
+        query = query.order_by(*order_by_args)
+        items = query[: effective_limit]
+        results = [self._map_message(item, folder=req.folder) for item in items]
+        print(f"search_messages: found {len(results)} results for filter={req.filter}, search={req.search}")
         return results
+
+    @staticmethod
+    def _parse_orderby(orderby: str | None) -> tuple[str, ...]:
+        raw = (orderby or "").strip()
+        if not raw:
+            return ("-datetime_received",)
+
+        mapping = {
+            "receiveddatetime": "datetime_received",
+            "datetime_received": "datetime_received",
+            "sentdatetime": "datetime_sent",
+            "datetime_sent": "datetime_sent",
+            "subject": "subject",
+        }
+
+        fields: list[str] = []
+        for part in raw.split(","):
+            token = part.strip()
+            if not token:
+                continue
+            pieces = token.split()
+            source_field = pieces[0].lower()
+            direction = pieces[1].lower() if len(pieces) > 1 else "asc"
+            target_field = mapping.get(source_field)
+            if not target_field:
+                continue
+            fields.append(f"-{target_field}" if direction == "desc" else target_field)
+
+        return tuple(fields) if fields else ("-datetime_received",)
+
+    @classmethod
+    def _parse_received_datetime_filter(cls, filter_text: str | None) -> dict[str, datetime]:
+        raw = (filter_text or "").strip()
+        if not raw:
+            return {}
+
+        # Support Graph-like OData fragments such as:
+        # receivedDateTime ge 2026-08-01T00:00:00+08:00 and receivedDateTime lt 2026-09-01T00:00:00+08:00
+        parts = [part.strip() for part in re.split(r"\s+and\s+", raw, flags=re.IGNORECASE) if part.strip()]
+        parsed: dict[str, datetime] = {}
+        op_to_lookup = {
+            "ge": "datetime_received__gte",
+            "gt": "datetime_received__gt",
+            "le": "datetime_received__lte",
+            "lt": "datetime_received__lt",
+            "eq": "datetime_received",
+        }
+
+        for part in parts:
+            match = re.match(
+                r"(?i)^(receivedDateTime|datetime_received)\s+(ge|gt|le|lt|eq)\s+(.+)$",
+                part,
+            )
+            if not match:
+                continue
+            operator = match.group(2).lower()
+            raw_value = match.group(3).strip().strip("\"'")
+            value = cls._parse_iso_datetime(raw_value)
+            parsed[op_to_lookup[operator]] = value
+
+        return parsed
 
     def create_draft(self, req: MailboxComposeInput) -> dict[str, Any]:
         account = self._build_account()
@@ -73,8 +135,7 @@ class EmailStore(EwsGateway):
         return result
 
     def create_reply_draft(self, req: MailboxReplyComposeInput) -> dict[str, Any]:
-        account = self._build_account()
-        source = account.get_item(req.message_id)
+        source = self._get_item_by_id(req.message_id, folder="inbox")
         response = source.create_reply()
         response.body = req.body
         response.save()
@@ -84,8 +145,7 @@ class EmailStore(EwsGateway):
         return result
 
     def update_draft(self, req: MailboxUpdateDraftInput) -> dict[str, Any] | None:
-        account = self._build_account()
-        message = account.get_item(req.draft_id)
+        message = self._get_item_by_id(req.draft_id, folder="drafts")
         if req.subject is not None:
             message.subject = req.subject
         if req.body is not None:
@@ -102,8 +162,7 @@ class EmailStore(EwsGateway):
         return result
 
     def send_draft(self, req: MailboxDraftIdInput) -> dict[str, Any] | None:
-        account = self._build_account()
-        message = account.get_item(req.draft_id)
+        message = self._get_item_by_id(req.draft_id, folder="drafts")
         message.send()
         return {
             "id": req.draft_id,
@@ -132,8 +191,7 @@ class EmailStore(EwsGateway):
         }
 
     def revoke_draft(self, req: MailboxDraftIdInput) -> dict[str, Any] | None:
-        account = self._build_account()
-        message = account.get_item(req.draft_id)
+        message = self._get_item_by_id(req.draft_id, folder="drafts")
         message.delete()
         return {
             "id": req.draft_id,

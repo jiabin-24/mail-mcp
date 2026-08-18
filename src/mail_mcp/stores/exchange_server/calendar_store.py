@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from ...schemas.request_models import (
@@ -26,8 +25,8 @@ class CalendarStore(EwsGateway):
         account = self._build_account()
         event = account.calendar.create_item()
         event.subject = req.subject
-        event.start = datetime.fromisoformat(req.start)
-        event.end = datetime.fromisoformat(req.end)
+        event.start = self._parse_iso_datetime(req.start)
+        event.end = self._parse_iso_datetime(req.end)
         if req.location:
             event.location = req.location
         if req.description:
@@ -43,8 +42,8 @@ class CalendarStore(EwsGateway):
         if req.subject is not None:
             event.subject = req.subject
         if req.start is not None and req.end is not None:
-            event.start = datetime.fromisoformat(req.start)
-            event.end = datetime.fromisoformat(req.end)
+            event.start = self._parse_iso_datetime(req.start)
+            event.end = self._parse_iso_datetime(req.end)
         if req.location is not None:
             event.location = req.location
         if req.description is not None:
@@ -76,8 +75,8 @@ class CalendarStore(EwsGateway):
         start_dt = None
         end_dt = None
         if req.start and req.end:
-            start_dt = datetime.fromisoformat(req.start)
-            end_dt = datetime.fromisoformat(req.end)
+            start_dt = self._parse_iso_datetime(req.start)
+            end_dt = self._parse_iso_datetime(req.end)
         items = account.calendar.view(start=start_dt, end=end_dt)[: req.limit]
         return [self._map_event(item) for item in items]
 

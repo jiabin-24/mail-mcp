@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .utils.datetime_utils import resolve_zone_info
+from .utils.datetime_utils import parse_iso_datetime, resolve_zone_info
 
 
 class GraphEmailAddress(BaseModel):
@@ -92,9 +91,8 @@ def _convert_datetime_to_mailbox_timezone(
     if target_zone is None:
         return raw
 
-    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
     try:
-        parsed = datetime.fromisoformat(normalized)
+        parsed = parse_iso_datetime(raw)
     except ValueError:
         return raw
 
