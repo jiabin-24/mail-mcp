@@ -221,9 +221,16 @@ class EwsGateway(GatewayBase):
             return []
         recipients: list[dict[str, Any]] = []
         for recipient in value:
-            address = getattr(recipient, "email_address", None) or getattr(recipient, "address", None) or ""
-            if address:
-                recipients.append({"emailAddress": {"address": address}})
+            mailbox = getattr(recipient, "mailbox", None)
+            address = (
+                getattr(mailbox, "email_address", None)
+                or getattr(recipient, "email_address", None)
+                or getattr(recipient, "address", None)
+                or ""
+            )
+            cleaned = str(address or "").strip()
+            if cleaned:
+                recipients.append({"emailAddress": {"address": cleaned}})
         return recipients
 
     @staticmethod
