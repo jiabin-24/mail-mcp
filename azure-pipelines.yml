@@ -11,7 +11,7 @@ resources:
 variables:
   # Container registry service connection established during pipeline creation
   dockerRegistryServiceConnection: 'c49dfe0d-0ee7-4dbd-88b6-b0f14e219dc9'
-  imageRepository: 'mailmcp'
+  imageRepository: 'mail-mcp'
   containerRegistry: 'mailassist.azurecr.io'
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
