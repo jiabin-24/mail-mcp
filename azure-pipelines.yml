@@ -2,8 +2,8 @@
 # Build and push an image to Azure Container Registry
 # https://docs.microsoft.com/azure/devops/pipelines/languages/docker
 
-trigger:
-- main
+trigger: none
+pr: none
 
 resources:
 - repo: self
@@ -36,6 +36,15 @@ stages:
         dockerfile: $(dockerfilePath)
         containerRegistry: $(dockerRegistryServiceConnection)
         tags: |
+          $(tag)
+
+- stage: Deploy
+  jobs:
+  - job: Deploy
+    displayName: Deploy
+    pool:
+      vmImage: $(vmImageName)
+    steps:
     - task: AzureRmWebAppDeployment@5
       inputs:
         ConnectionType: 'AzureRM'
