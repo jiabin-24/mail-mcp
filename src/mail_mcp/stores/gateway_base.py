@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -167,12 +167,13 @@ class GatewayBase:
         raise NotImplementedError("A concrete gateway implementation must override _request().")
 
     @staticmethod
-    def _parse_iso_datetime(value: str) -> datetime:
-        """解析 ISO 时间并统一转换为 UTC。"""
+    def _parse_iso_datetime(value: str, time_zone: tzinfo | None = None) -> datetime:
+        """解析 ISO 时间并统一转换为带时区的 datetime（不传时区则默认 UTC）。"""
         dt = parse_iso_datetime(value)
+        time_zone = time_zone or UTC
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=UTC)
-        return dt.astimezone(UTC)
+            return dt.replace(tzinfo=time_zone)
+        return dt.astimezone(time_zone)
 
     def _parse_iso_datetime_with_time_zone(self, value: str, request_time_zone: str | None = None) -> datetime:
         """解析 ISO 时间并返回带时区的 datetime（不强制转 UTC）。"""
@@ -184,12 +185,9 @@ class GatewayBase:
             zone = resolve_zone_info(zone_name)
             if zone is None:
                 continue
-            if dt.tzinfo is not None:
-                return dt.astimezone(zone)
-            return dt.replace(tzinfo=zone)
+            return dt.astimezone(zone) if dt.tzinfo else dt.replace(tzinfo=zone)
 
-        invalid_time_zone = (request_time_zone or "").strip() or "<empty>"
-        raise ValueError(f"invalid time zone: {invalid_time_zone}")
+        raise ValueError(f"invalid time zone: {(request_time_zone or "").strip() or "<empty>"}")
 
     def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
         """按关键词列出租户用户（仅返回含邮箱的用户）。"""

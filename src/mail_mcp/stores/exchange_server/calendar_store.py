@@ -18,7 +18,6 @@ from .ews_gateway import EwsGateway
 
 
 LOGGER = logging.getLogger(__name__)
-EWS_ONLINE_MEETING_CONFERENCE_TYPE = "NetMeeting"
 
 
 class CalendarStore(EwsGateway):
@@ -64,8 +63,6 @@ class CalendarStore(EwsGateway):
             attendees = self._attendees_from_addresses(req.attendees)
             event.required_attendees = attendees
             LOGGER.info("EWS update calendar attendees requested: event_id=%s attendees=%s", req.event_id, req.attendees)
-            if attendees:
-                event.conference_type = EWS_ONLINE_MEETING_CONFERENCE_TYPE
         if req.is_all_day is not None:
             event.is_all_day = bool(req.is_all_day)
         event.save()
