@@ -940,6 +940,7 @@ def get_dynamic_oauth_config_from_env() -> dict[str, Any] | None:
     scope_str = (
         os.getenv("MAIL_MCP_BACKEND") == "graph" and os.getenv("MCP_OAUTH_ENTRA_SCOPES") or os.getenv("MCP_OAUTH_ENTRA_APP_SCOPES")
     )
+    LOGGER.info("dynamic oauth config loaded from env: issuer_url=%s tenant_id=%s client_id=%s scopes=%s", issuer_url, tenant_id, client_id, scope_str)
     scopes = [part for part in scope_str.split() if part]
 
     if not issuer_url or not tenant_id or not client_id or not client_secret:
