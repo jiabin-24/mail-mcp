@@ -4,7 +4,6 @@ from html import escape
 from typing import Any
 from urllib.parse import quote
 
-from ..gateway_base import recipient_addresses
 from .graph_gateway import GraphGateway
 from ...models import map_graph_message
 from ...schemas.request_models import (
@@ -17,6 +16,7 @@ from ...schemas.request_models import (
     MailboxUpdateDraftInput,
 )
 from ...utils.datetime_utils import normalize_mail_filter_time_literals
+from ...utils.recipient_utils import recipient_addresses
 
 
 GRAPH_QUERY_SAFE = "()':,=-"

@@ -7,7 +7,7 @@ from datetime import UTC
 from typing import Any, Callable, cast
 
 import msal
-from exchangelib import Account, Configuration, DELEGATE, OAUTH2
+from exchangelib import Account, Configuration, DELEGATE, Mailbox, OAUTH2
 from exchangelib.credentials import OAuth2Credentials
 from oauthlib.oauth2 import OAuth2Token
 
@@ -225,6 +225,15 @@ class EwsGateway(GatewayBase):
             if address:
                 recipients.append({"emailAddress": {"address": address}})
         return recipients
+
+    @staticmethod
+    def _mailboxes_from_addresses(addresses: list[str] | None) -> list[Mailbox]:
+        # 将邮箱字符串列表（允许 None）转换为 exchangelib Mailbox 列表，并过滤空值。
+        return [
+            Mailbox(email_address=address.strip())
+            for address in (addresses or [])
+            if isinstance(address, str) and address.strip()
+        ]
 
     @staticmethod
     def _account_id(value: Any) -> str:

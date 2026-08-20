@@ -5,6 +5,8 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from exchangelib import Message
+
 from ...schemas.request_models import (
     MailboxComposeInput,
     MailboxDraftIdInput,
@@ -14,6 +16,7 @@ from ...schemas.request_models import (
     MailboxSearchInput,
     MailboxUpdateDraftInput,
 )
+from ...utils.recipient_utils import recipient_addresses
 from .ews_gateway import EwsGateway
 
 LOGGER = logging.getLogger(__name__)
@@ -57,12 +60,7 @@ class EmailStore(EwsGateway):
         query = query.order_by(*order_by_args)
         items = query[: effective_limit]
         results = [self._map_message(item, folder=req.folder) for item in items]
-        LOGGER.info(
-            "search_messages: found %s results for filter=%s, search=%s",
-            len(results),
-            req.filter,
-            req.search,
-        )
+        LOGGER.info("search_messages: found %s results for filter=%s, search=%s", len(results), req.filter, req.search)
         return results
 
     @staticmethod
@@ -128,14 +126,15 @@ class EmailStore(EwsGateway):
 
     def create_draft(self, req: MailboxComposeInput) -> dict[str, Any]:
         account = self._build_account()
-        message = account.compose()
-        message.subject = req.subject
-        message.body = req.body
-        message.to_recipients = req.to
-        if req.cc:
-            message.cc_recipients = req.cc
-        if req.bcc:
-            message.bcc_recipients = req.bcc
+        message = Message(
+            account=account,
+            folder=account.drafts,
+            subject=req.subject,
+            body=req.body,
+            to_recipients=self._mailboxes_from_addresses(req.to),
+            cc_recipients=self._mailboxes_from_addresses(req.cc),
+            bcc_recipients=self._mailboxes_from_addresses(req.bcc),
+        )
         message.save()
         result = self._map_message(message, folder="drafts")
         result["draft_id"] = str(message.id)
@@ -159,11 +158,11 @@ class EmailStore(EwsGateway):
         if req.body is not None:
             message.body = req.body
         if req.to is not None:
-            message.to_recipients = req.to
+            message.to_recipients = self._mailboxes_from_addresses(req.to)
         if req.cc is not None:
-            message.cc_recipients = req.cc
+            message.cc_recipients = self._mailboxes_from_addresses(req.cc)
         if req.bcc is not None:
-            message.bcc_recipients = req.bcc
+            message.bcc_recipients = self._mailboxes_from_addresses(req.bcc)
         message.save()
         result = self._map_message(message, folder="drafts")
         result["webLink"] = ""
@@ -179,21 +178,9 @@ class EmailStore(EwsGateway):
             "status": "sent",
             "sent_summary": {
                 "subject": self._safe_text(getattr(message, "subject", "")),
-                "to": [
-                    recipient.email_address
-                    for recipient in getattr(message, "to_recipients", [])
-                    if getattr(recipient, "email_address", None)
-                ],
-                "cc": [
-                    recipient.email_address
-                    for recipient in getattr(message, "cc_recipients", [])
-                    if getattr(recipient, "email_address", None)
-                ],
-                "bcc": [
-                    recipient.email_address
-                    for recipient in getattr(message, "bcc_recipients", [])
-                    if getattr(recipient, "email_address", None)
-                ],
+                "to": recipient_addresses(getattr(message, "to_recipients", None)),
+                "cc": recipient_addresses(getattr(message, "cc_recipients", None)),
+                "bcc": recipient_addresses(getattr(message, "bcc_recipients", None)),
                 "bodyPreview": self._preview_text(getattr(message, "body", None)),
             },
         }

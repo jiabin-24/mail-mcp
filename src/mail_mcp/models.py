@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from .utils.datetime_utils import parse_iso_datetime, resolve_zone_info
+from .utils.recipient_utils import recipient_address, recipient_addresses
 
 
 class GraphEmailAddress(BaseModel):
@@ -106,21 +107,6 @@ def _convert_datetime_to_mailbox_timezone(
         return parsed.astimezone(target_zone).isoformat()
     except Exception:
         return raw
-
-
-def recipient_address(recipient: GraphRecipient) -> str:
-    return recipient.emailAddress.address or ""
-
-
-def recipient_addresses(recipients: list[GraphRecipient]) -> list[str]:
-    result: list[str] = []
-    for recipient in recipients:
-        address = recipient_address(recipient)
-        if address:
-            result.append(address)
-    return result
-
-
 def map_graph_message(
     message: dict[str, Any],
     folder: str | None = None,
