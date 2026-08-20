@@ -128,10 +128,15 @@ class EmailStore(GraphGateway):
         reply_html = self._plain_text_to_html(req.body)
         merged_html = f"<div>{reply_html}</div><br/>{quoted_html}" if quoted_html else f"<div>{reply_html}</div>"
 
+        patch_payload: dict[str, Any] = {
+            "subject": req.subject,
+            "body": {"contentType": "HTML", "content": merged_html},
+        }
+
         updated = self._request(
             "PATCH",
             f"{self._mailbox_prefix}/messages/{draft_id}",
-            json={"body": {"contentType": "HTML", "content": merged_html}},
+            json=patch_payload,
         )
         result = map_graph_message(updated, folder="drafts")
         result["draft_id"] = updated.get("id", "")

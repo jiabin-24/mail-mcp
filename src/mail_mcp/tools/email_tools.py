@@ -84,11 +84,11 @@ def register_email_tools(app, email_store: EmailStore) -> None:
 
     @app.tool()
     @tool_exception_logging
-    def mailbox_reply_compose(message_id: str, body: str) -> dict:
+    def mailbox_reply_compose(message_id: str, body: str, subject: str) -> dict:
         """Create a reply draft based on an existing message while preserving thread context."""
         req = validate_input(
             MailboxReplyComposeInput,
-            {"message_id": message_id, "body": body},
+            {"message_id": message_id, "subject": subject, "body": body},
         )
         return email_store.create_reply_draft(req)
 

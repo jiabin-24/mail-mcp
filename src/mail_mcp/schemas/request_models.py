@@ -43,6 +43,7 @@ class MailboxReplyComposeInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     message_id: str = Field(min_length=1)
+    subject: str = Field(min_length=1)
     body: str = Field(min_length=1)
 
 

@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from datetime import UTC
+from html import escape
 from typing import Any, Callable, cast
 
 import msal
-from exchangelib import Account, Configuration, DELEGATE, Mailbox, OAUTH2
+from exchangelib import Account, Configuration, DELEGATE, HTMLBody, Mailbox, OAUTH2
 from exchangelib.credentials import OAuth2Credentials
 from oauthlib.oauth2 import OAuth2Token
 
 from ..gateway_base import GatewayBase
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class EwsGateway(GatewayBase):
@@ -169,16 +174,11 @@ class EwsGateway(GatewayBase):
         return cast(Any, account.root) / name
 
     def _get_item_by_id(self, item_id: str, folder: str | None = None) -> Any:
-        account = self._build_account()
         folder_obj = self._folder_for_name(folder)
         try:
             return folder_obj.get(id=item_id)
         except Exception:
-            if folder_obj is not account.root:
-                try:
-                    return account.root.get(id=item_id)
-                except Exception:
-                    pass
+            LOGGER.exception("EWS get item failed: item_id=%s folder=%s", item_id, folder or "inbox")
             raise
 
     def _utc_iso(self, value: Any) -> str:
@@ -234,6 +234,13 @@ class EwsGateway(GatewayBase):
             for address in (addresses or [])
             if isinstance(address, str) and address.strip()
         ]
+
+    @staticmethod
+    def _plain_text_to_html_body(text: str) -> HTMLBody:
+        normalized = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+        escaped = escape(normalized)
+        html = escaped.replace("\n", "<br/>")
+        return HTMLBody(f"<div>{html}</div>")
 
     @staticmethod
     def _account_id(value: Any) -> str:

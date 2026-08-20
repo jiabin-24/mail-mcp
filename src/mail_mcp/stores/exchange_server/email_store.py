@@ -143,11 +143,16 @@ class EmailStore(EwsGateway):
 
     def create_reply_draft(self, req: MailboxReplyComposeInput) -> dict[str, Any]:
         source = self._get_item_by_id(req.message_id, folder="inbox")
-        response = source.create_reply()
-        response.body = req.body
-        response.save()
-        result = self._map_message(response, folder="drafts")
-        result["draft_id"] = str(response.id)
+        reply_item = source.create_reply(
+            subject=req.subject,
+            body=self._plain_text_to_html_body(req.body),
+        )
+        saved_draft = reply_item.save(folder=source.account.drafts)
+        draft_id = str(saved_draft.id)
+        draft = self._get_item_by_id(draft_id, folder="drafts")
+        result = self._map_message(draft, folder="drafts")
+        result["id"] = draft_id
+        result["draft_id"] = draft_id
         result["webLink"] = ""
         return result
 
