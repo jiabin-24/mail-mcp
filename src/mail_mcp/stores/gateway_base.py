@@ -11,7 +11,7 @@ from cachetools import TTLCache
 from mail_mcp.utils.search_token_tools import expand_search_tokens
 
 from ..models import map_graph_calendar_event, map_graph_message
-from ..utils.datetime_utils import parse_iso_datetime
+from ..utils.datetime_utils import parse_iso_datetime, resolve_zone_info
 from ..utils.token_log_utils import log_token_value
 
 GRAPH_QUERY_SAFE = "()':,=-"
@@ -173,6 +173,26 @@ class GatewayBase:
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC)
+
+    def _parse_iso_datetime_with_time_zone(self, value: str, request_time_zone: str | None = None) -> datetime:
+        """解析 ISO 时间并返回带时区的 datetime（不强制转 UTC）。
+
+        - 输入已带时区：保持原始时区信息。
+        - 输入无时区：按 request_time_zone -> mailbox time zone -> UTC 推断并附加 tzinfo。
+        """
+        dt = parse_iso_datetime(value)
+        if dt.tzinfo is not None:
+            return dt
+
+        effective_time_zone = (
+            (request_time_zone or "").strip()
+            or (self.get_mailbox_time_zone_if_available() or "").strip()
+            or "UTC"
+        )
+        zone = resolve_zone_info(effective_time_zone)
+        if zone is None:
+            raise ValueError(f"invalid time zone: {effective_time_zone}")
+        return dt.replace(tzinfo=zone)
 
     def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
         """按关键词列出租户用户（仅返回含邮箱的用户）。"""

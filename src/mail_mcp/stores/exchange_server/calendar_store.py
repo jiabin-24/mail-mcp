@@ -34,8 +34,8 @@ class CalendarStore(EwsGateway):
         account = self._build_account()
         event: Any = CalendarItem(folder=account.calendar)
         event.subject = req.subject
-        event.start = self._parse_iso_datetime(req.start)
-        event.end = self._parse_iso_datetime(req.end)
+        event.start = self._parse_iso_datetime_with_time_zone(req.start, req.time_zone)
+        event.end = self._parse_iso_datetime_with_time_zone(req.end, req.time_zone)
         if req.location:
             event.location = req.location
         if req.description:
@@ -54,8 +54,8 @@ class CalendarStore(EwsGateway):
         if req.subject is not None:
             event.subject = req.subject
         if req.start is not None and req.end is not None:
-            event.start = self._parse_iso_datetime(req.start)
-            event.end = self._parse_iso_datetime(req.end)
+            event.start = self._parse_iso_datetime_with_time_zone(req.start, req.time_zone)
+            event.end = self._parse_iso_datetime_with_time_zone(req.end, req.time_zone)
         if req.location is not None:
             event.location = req.location
         if req.description is not None:
@@ -97,8 +97,8 @@ class CalendarStore(EwsGateway):
         start_dt = None
         end_dt = None
         if req.start and req.end:
-            start_dt = self._parse_iso_datetime(req.start)
-            end_dt = self._parse_iso_datetime(req.end)
+            start_dt = self._parse_iso_datetime_with_time_zone(req.start)
+            end_dt = self._parse_iso_datetime_with_time_zone(req.end)
         items = cast(Any, calendar).view(start=start_dt, end=end_dt)[:size]
         return [self._map_event(item) for item in items]
 
