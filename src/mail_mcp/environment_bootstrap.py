@@ -13,14 +13,19 @@ class EnvironmentBootstrapper:
     @staticmethod
     def _load_env_file(path: Path) -> None:
         if not path.exists():
+            print(f"[env-bootstrap] skip missing env file: {path}")
             return
 
         # 按优先级加载本地环境变量：只在当前进程中未显式设置时写入默认值。
+        loaded_keys = 0
         for key, value in dotenv_values(path).items():
             if value is None:
                 continue
             # 进程级环境变量优先级最高，适用于 App Service / Secret 配置等场景。
             os.environ.setdefault(key, value)
+            loaded_keys += 1
+
+        print(f"[env-bootstrap] loaded env file: {path} keys={loaded_keys}")
 
     def bootstrap(self) -> None:
         # APP_ENV 允许按环境切换加载 .env / .env.{APP_ENV} / .env.prod。
