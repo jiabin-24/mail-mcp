@@ -36,4 +36,12 @@ stages:
         dockerfile: $(dockerfilePath)
         containerRegistry: $(dockerRegistryServiceConnection)
         tags: |
-          $(tag)
+    - task: AzureRmWebAppDeployment@5
+      inputs:
+        ConnectionType: 'AzureRM'
+        azureSubscription: 'ME-MngEnvMCAP723313-v-jiabinzhou-1(20c2ec34-c954-4b17-83ce-ffb7bae3146e)'
+        appType: 'webAppContainer'
+        WebAppName: 'mail-asist'
+        DockerNamespace: 'mailassist.azurecr.io'
+        DockerRepository: 'mail-mcp'
+        DockerImageTag: '$(tag)'
