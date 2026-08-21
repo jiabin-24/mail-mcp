@@ -50,10 +50,7 @@ python -m mail_mcp.server
 1. 使用 ACR 云端构建镜像（无需本地 Docker）
 
 ```bash
-az acr build \
-  --registry <acr-name> \
-  --image mail-mcp:latest \
-  .
+az acr build --registry <acr-name> --image mail-mcp:latest .
 ```
 
 2. （可选）查看 ACR 中镜像标签
