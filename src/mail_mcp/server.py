@@ -27,7 +27,9 @@ from .utils.request_token_provider import RequestTokenProvider
 from .utils.biz_logger import configure_default_loggers
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
-_ROOT_DIR = Path(__file__).resolve().parents[2]
+_ROOT_DIR = Path(
+    (os.getenv("MCP_APP_ROOT") or "").strip() or Path(__file__).resolve().parents[2]
+).resolve()
 LOGGER = logging.getLogger("mail_mcp")
 
 

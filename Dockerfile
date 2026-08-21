@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    MCP_APP_ROOT=/app \
     MCP_HOST=0.0.0.0 \
     MCP_PORT=80 \
     MCP_PATH=/mcp
