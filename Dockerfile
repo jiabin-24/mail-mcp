@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md .env.prod ./
 COPY src ./src
 
 RUN pip install --no-cache-dir --upgrade pip \
