@@ -17,6 +17,7 @@ from ...schemas.request_models import (
     MailboxUpdateDraftInput,
 )
 from ...utils.recipient_utils import recipient_addresses
+from mail_mcp.utils.email_helper import EmailHelper
 from .ews_gateway import EwsGateway
 
 LOGGER = logging.getLogger(__name__)
@@ -131,9 +132,9 @@ class EmailStore(EwsGateway):
             folder=account.drafts,
             subject=req.subject,
             body=req.body,
-            to_recipients=self._mailboxes_from_addresses(req.to),
-            cc_recipients=self._mailboxes_from_addresses(req.cc),
-            bcc_recipients=self._mailboxes_from_addresses(req.bcc),
+            to_recipients=EmailHelper.mailboxes_from_addresses(req.to),
+            cc_recipients=EmailHelper.mailboxes_from_addresses(req.cc),
+            bcc_recipients=EmailHelper.mailboxes_from_addresses(req.bcc),
         )
         message.save()
         result = self._map_message(message, folder="drafts")
@@ -145,7 +146,7 @@ class EmailStore(EwsGateway):
         source = self._get_item_by_id(req.message_id, folder="inbox")
         reply_item = source.create_reply(
             subject=req.subject,
-            body=self._plain_text_to_html_body(req.body),
+            body=EmailHelper.plain_text_to_html_body(req.body),
         )
         saved_draft = reply_item.save(folder=source.account.drafts)
         draft_id = str(saved_draft.id)
@@ -163,11 +164,11 @@ class EmailStore(EwsGateway):
         if req.body is not None:
             message.body = req.body
         if req.to is not None:
-            message.to_recipients = self._mailboxes_from_addresses(req.to)
+            message.to_recipients = EmailHelper.mailboxes_from_addresses(req.to)
         if req.cc is not None:
-            message.cc_recipients = self._mailboxes_from_addresses(req.cc)
+            message.cc_recipients = EmailHelper.mailboxes_from_addresses(req.cc)
         if req.bcc is not None:
-            message.bcc_recipients = self._mailboxes_from_addresses(req.bcc)
+            message.bcc_recipients = EmailHelper.mailboxes_from_addresses(req.bcc)
         message.save()
         result = self._map_message(message, folder="drafts")
         result["webLink"] = ""
@@ -182,11 +183,11 @@ class EmailStore(EwsGateway):
             "sent": True,
             "status": "sent",
             "sent_summary": {
-                "subject": self._safe_text(getattr(message, "subject", "")),
+                "subject": EmailHelper.safe_text(getattr(message, "subject", "")),
                 "to": recipient_addresses(getattr(message, "to_recipients", None)),
                 "cc": recipient_addresses(getattr(message, "cc_recipients", None)),
                 "bcc": recipient_addresses(getattr(message, "bcc_recipients", None)),
-                "bodyPreview": self._preview_text(getattr(message, "body", None)),
+                "bodyPreview": EmailHelper.preview_text(getattr(message, "body", None)),
             },
         }
 
@@ -198,7 +199,7 @@ class EmailStore(EwsGateway):
             "revoked": True,
             "status": "revoked",
             "folder": "drafts",
-            "subject": self._safe_text(getattr(message, "subject", "")),
+            "subject": EmailHelper.safe_text(getattr(message, "subject", "")),
         }
 
     def _map_message(self, item: Any, folder: str | None = None) -> dict[str, Any]:
@@ -211,14 +212,14 @@ class EmailStore(EwsGateway):
             body = item.text_body
         return {
             "id": str(getattr(item, "id", "")),
-            "subject": self._safe_text(getattr(item, "subject", "")),
-            "bodyPreview": self._preview_text(body),
+            "subject": EmailHelper.safe_text(getattr(item, "subject", "")),
+            "bodyPreview": EmailHelper.preview_text(body),
             "from": {
-                "emailAddress": {"address": self._safe_text(getattr(sender, "email_address", ""))}
+                "emailAddress": {"address": EmailHelper.safe_text(getattr(sender, "email_address", ""))}
             } if sender and getattr(sender, "email_address", None) else None,
-            "toRecipients": self._recipient_list(to_recipients),
-            "ccRecipients": self._recipient_list(cc_recipients),
-            "bccRecipients": self._recipient_list(bcc_recipients),
+            "toRecipients": EmailHelper.recipient_list(to_recipients),
+            "ccRecipients": EmailHelper.recipient_list(cc_recipients),
+            "bccRecipients": EmailHelper.recipient_list(bcc_recipients),
             "isDraft": bool(getattr(item, "is_draft", False)),
             "receivedDateTime": self._utc_iso(getattr(item, "datetime_received", None)),
             "sentDateTime": self._utc_iso(getattr(item, "datetime_sent", None)),

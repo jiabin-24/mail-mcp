@@ -8,6 +8,7 @@ from typing import Any, Callable
 from urllib.parse import quote
 
 from cachetools import TTLCache
+from mail_mcp.utils.email_helper import EmailHelper
 from mail_mcp.utils.search_token_tools import expand_search_tokens
 
 from ..models import map_graph_calendar_event, map_graph_message
@@ -38,24 +39,9 @@ class GatewayBase:
 
     def _folder_segment(self, folder: str | None) -> str:
         """将外部文件夹名称规范化为 Graph 可识别的路径片段。"""
-        normalized = (folder or "").strip()
-        if not normalized:
-            return "inbox"
-
-        mapping = {
-            "inbox": "inbox",
-            "sent": "sentitems",
-            "sentitems": "sentitems",
-            "drafts": "drafts",
-            "archive": "archive",
-            "deleteditems": "deleteditems",
-            "deleted": "deleteditems",
-            "junk": "junkemail",
-            "junkemail": "junkemail",
-        }
-        lowered = normalized.lower()
-        if lowered in mapping:
-            return mapping[lowered]
+        normalized = EmailHelper.normalize_folder_name(folder)
+        if normalized != (folder or "").strip():
+            return normalized
         return quote(normalized, safe="")
 
     def _body_content_type(self, body: str | None) -> str:
@@ -88,19 +74,9 @@ class GatewayBase:
                 })
         return attendees
 
-    def _plain_text_to_html(self, text: str | None) -> str:
-        """将纯文本安全转义为简单 HTML，并保留换行。"""
-        content = str(text or "")
-        escaped = (
-            content.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
-        return escaped.replace("\r\n", "\n").replace("\n", "<br/>")
-
     def _compose_online_meeting_body(self, description: str | None, existing_body_html: str | None) -> str:
         """生成会议正文：优先使用新描述，并在存在旧内容时进行拼接。"""
-        new_html = self._plain_text_to_html(description)
+        new_html = EmailHelper.plain_text_to_html(description)
         if not new_html.strip():
             return existing_body_html or "<div></div>"
 

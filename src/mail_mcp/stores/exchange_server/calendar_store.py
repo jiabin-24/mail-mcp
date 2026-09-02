@@ -14,6 +14,7 @@ from ...schemas.request_models import (
     CalendarRespondInvitationInput,
     CalendarUpdateEventInput,
 )
+from mail_mcp.utils.email_helper import EmailHelper
 from .ews_gateway import EwsGateway
 
 
@@ -105,15 +106,15 @@ class CalendarStore(EwsGateway):
         organizer = getattr(event, "organizer", None)
         return {
             "id": str(getattr(event, "id", "")),
-            "subject": self._safe_text(getattr(event, "subject", "")),
-            "bodyPreview": self._preview_text(getattr(event, "body", None)),
+            "subject": EmailHelper.safe_text(getattr(event, "subject", "")),
+            "bodyPreview": EmailHelper.preview_text(getattr(event, "body", None)),
             "organizer": {
-                "emailAddress": {"address": self._safe_text(getattr(organizer, "email_address", ""))}
+                "emailAddress": {"address": EmailHelper.safe_text(getattr(organizer, "email_address", ""))}
             } if organizer and getattr(organizer, "email_address", None) else None,
-            "attendees": self._recipient_list(getattr(event, "required_attendees", []) or []),
+            "attendees": EmailHelper.recipient_list(getattr(event, "required_attendees", []) or []),
             "start": self._utc_iso(start),
             "end": self._utc_iso(end),
-            "location": {"displayName": self._safe_text(getattr(event, "location", ""))},
+            "location": {"displayName": EmailHelper.safe_text(getattr(event, "location", ""))},
             "isAllDay": bool(getattr(event, "is_all_day", False)),
             "webLink": "",
         }

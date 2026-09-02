@@ -5,13 +5,14 @@ import json
 import logging
 import os
 from datetime import UTC
-from html import escape
 from typing import Any, Callable, cast
 
 import msal
-from exchangelib import Account, Configuration, DELEGATE, HTMLBody, Mailbox, OAUTH2
+from exchangelib import Account, Configuration, DELEGATE, OAUTH2
 from exchangelib.credentials import OAuth2Credentials
 from oauthlib.oauth2 import OAuth2Token
+
+from mail_mcp.utils.email_helper import EmailHelper
 
 from ..gateway_base import GatewayBase
 
@@ -70,7 +71,9 @@ class EwsGateway(GatewayBase):
         )
 
     def _resolve_current_mailbox(self) -> str:
-        token = self._strip_bearer_prefix(self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip())
+        token = EmailHelper.strip_bearer_prefix(
+            self._token_provider() or os.getenv("OUTLOOK_ACCESS_TOKEN", "").strip()
+        )
         if not token:
             return ""
 
@@ -139,28 +142,9 @@ class EwsGateway(GatewayBase):
         self._account = account
         return account
 
-    @staticmethod
-    def _normalize_folder_name(value: str | None) -> str:
-        normalized = (value or "").strip()
-        if not normalized:
-            return "inbox"
-        mapping = {
-            "inbox": "inbox",
-            "sent": "sentitems",
-            "sentitems": "sentitems",
-            "drafts": "drafts",
-            "archive": "archive",
-            "deleted": "deleteditems",
-            "deleteditems": "deleteditems",
-            "junk": "junkemail",
-            "junkemail": "junkemail",
-        }
-        lowered = normalized.lower()
-        return mapping.get(lowered, normalized)
-
     def _folder_for_name(self, folder: str | None):
         account = self._build_account()
-        name = self._normalize_folder_name(folder)
+        name = EmailHelper.normalize_folder_name(folder)
         mapping = {
             "inbox": account.inbox,
             "sentitems": account.sent,
@@ -192,77 +176,6 @@ class EwsGateway(GatewayBase):
             except Exception:
                 return value.isoformat()
         return str(value)
-
-    @staticmethod
-    def _safe_text(value: Any) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, str):
-            return value
-        return str(value)
-
-    @staticmethod
-    def _preview_text(body: Any) -> str:
-        text = ""
-        if body is None:
-            return ""
-        if hasattr(body, "text_body") and body.text_body:
-            text = body.text_body
-        elif isinstance(body, str):
-            text = body
-        elif isinstance(body, dict):
-            text = body.get("content", "") or ""
-        text = str(text).replace("\r", "").replace("\n", " ")
-        return text[:200]
-
-    @staticmethod
-    def _recipient_list(value: Any) -> list[dict[str, Any]]:
-        if not value:
-            return []
-        recipients: list[dict[str, Any]] = []
-        for recipient in value:
-            mailbox = getattr(recipient, "mailbox", None)
-            address = (
-                getattr(mailbox, "email_address", None)
-                or getattr(recipient, "email_address", None)
-                or getattr(recipient, "address", None)
-                or ""
-            )
-            cleaned = str(address or "").strip()
-            if cleaned:
-                recipients.append({"emailAddress": {"address": cleaned}})
-        return recipients
-
-    @staticmethod
-    def _mailboxes_from_addresses(addresses: list[str] | None) -> list[Mailbox]:
-        # 将邮箱字符串列表（允许 None）转换为 exchangelib Mailbox 列表，并过滤空值。
-        return [
-            Mailbox(email_address=address.strip())
-            for address in (addresses or [])
-            if isinstance(address, str) and address.strip()
-        ]
-
-    @staticmethod
-    def _plain_text_to_html_body(text: str) -> HTMLBody:
-        normalized = (text or "").replace("\r\n", "\n").replace("\r", "\n")
-        escaped = escape(normalized)
-        html = escaped.replace("\n", "<br/>")
-        return HTMLBody(f"<div>{html}</div>")
-
-    @staticmethod
-    def _account_id(value: Any) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, str):
-            return value
-        return getattr(value, "id", str(value))
-
-    @staticmethod
-    def _strip_bearer_prefix(token: str | None) -> str:
-        if not token:
-            return ""
-        return token.replace("Bearer ", "", 1).strip()
-
 
 ExchangeServerStoreBase = EwsGateway
 
