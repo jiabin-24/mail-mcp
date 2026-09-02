@@ -2,7 +2,9 @@ from types import SimpleNamespace
 
 from datetime import datetime
 
-from mail_mcp.schemas.request_models import MailboxGetMessageInput
+from exchangelib import HTMLBody
+
+from mail_mcp.schemas.request_models import MailboxComposeInput, MailboxGetMessageInput
 from mail_mcp.schemas.request_models import MailboxSearchInput
 from mail_mcp.stores.exchange_server import CalendarStore, EmailSendQueueStore, EmailStore
 from mail_mcp.stores.exchange_server.ews_gateway import EwsGateway
@@ -87,6 +89,36 @@ def test_exchange_server_email_store_uses_ews_folder_get_for_item_lookup(monkeyp
 
     assert result["id"] == "msg-123"
     assert fake_account.inbox.calls == [{"id": "msg-123"}]
+
+
+def test_exchange_server_create_draft_preserves_html_body(monkeypatch) -> None:
+    store = EmailStore(token_provider=lambda: "Bearer my-access-token")
+    fake_account = SimpleNamespace(drafts=object())
+    captured = {}
+
+    class FakeMessage:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.__dict__.update(kwargs)
+            self.id = "draft-123"
+            self.is_draft = True
+
+        def save(self):
+            return None
+
+    monkeypatch.setattr(store, "_build_account", lambda: fake_account)
+    monkeypatch.setattr("mail_mcp.stores.exchange_server.email_store.Message", FakeMessage)
+
+    store.create_draft(
+        MailboxComposeInput(
+            to=["recipient@example.com"],
+            subject="HTML draft",
+            body="<p>Hello <strong>world</strong></p>",
+        )
+    )
+
+    assert isinstance(captured["body"], HTMLBody)
+    assert str(captured["body"]) == "<p>Hello <strong>world</strong></p>"
 
 
 def test_exchange_server_email_store_parses_received_datetime_filter() -> None:

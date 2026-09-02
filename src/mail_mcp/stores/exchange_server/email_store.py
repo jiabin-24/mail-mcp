@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from exchangelib import Message
+from exchangelib import HTMLBody, Message
 
 from ...schemas.request_models import (
     MailboxComposeInput,
@@ -128,11 +128,12 @@ class EmailStore(EwsGateway):
 
     def create_draft(self, req: MailboxComposeInput) -> dict[str, Any]:
         account = self._build_account()
+        body = HTMLBody(req.body) if self._body_content_type(req.body) == "HTML" else req.body
         message = Message(
             account=account,
             folder=account.drafts,
             subject=req.subject,
-            body=req.body,
+            body=body,
             to_recipients=EmailHelper.mailboxes_from_addresses(req.to),
             cc_recipients=EmailHelper.mailboxes_from_addresses(req.cc),
             bcc_recipients=EmailHelper.mailboxes_from_addresses(req.bcc),
