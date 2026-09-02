@@ -16,6 +16,7 @@ from ...schemas.request_models import (
     MailboxSearchInput,
     MailboxUpdateDraftInput,
 )
+from ...utils.datetime_utils import format_utc_iso
 from ...utils.recipient_utils import recipient_addresses
 from mail_mcp.utils.email_helper import EmailHelper
 from .ews_gateway import EwsGateway
@@ -221,8 +222,8 @@ class EmailStore(EwsGateway):
             "ccRecipients": EmailHelper.recipient_list(cc_recipients),
             "bccRecipients": EmailHelper.recipient_list(bcc_recipients),
             "isDraft": bool(getattr(item, "is_draft", False)),
-            "receivedDateTime": self._utc_iso(getattr(item, "datetime_received", None)),
-            "sentDateTime": self._utc_iso(getattr(item, "datetime_sent", None)),
+            "receivedDateTime": format_utc_iso(getattr(item, "datetime_received", None)),
+            "sentDateTime": format_utc_iso(getattr(item, "datetime_sent", None)),
             "folder": folder or "inbox",
             "webLink": "",
         }

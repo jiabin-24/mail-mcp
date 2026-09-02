@@ -4,7 +4,6 @@ import base64
 import json
 import logging
 import os
-from datetime import UTC
 from typing import Any, Callable, cast
 
 import msal
@@ -164,18 +163,6 @@ class EwsGateway(GatewayBase):
         except Exception:
             LOGGER.exception("EWS get item failed: item_id=%s folder=%s", item_id, folder or "inbox")
             raise
-
-    def _utc_iso(self, value: Any) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, str):
-            return value
-        if hasattr(value, "astimezone"):
-            try:
-                return value.astimezone(UTC).isoformat()
-            except Exception:
-                return value.isoformat()
-        return str(value)
 
 ExchangeServerStoreBase = EwsGateway
 

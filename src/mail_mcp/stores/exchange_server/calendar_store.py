@@ -14,6 +14,7 @@ from ...schemas.request_models import (
     CalendarRespondInvitationInput,
     CalendarUpdateEventInput,
 )
+from ...utils.datetime_utils import format_utc_iso
 from mail_mcp.utils.email_helper import EmailHelper
 from .ews_gateway import EwsGateway
 
@@ -112,8 +113,8 @@ class CalendarStore(EwsGateway):
                 "emailAddress": {"address": EmailHelper.safe_text(getattr(organizer, "email_address", ""))}
             } if organizer and getattr(organizer, "email_address", None) else None,
             "attendees": EmailHelper.recipient_list(getattr(event, "required_attendees", []) or []),
-            "start": self._utc_iso(start),
-            "end": self._utc_iso(end),
+            "start": format_utc_iso(start),
+            "end": format_utc_iso(end),
             "location": {"displayName": EmailHelper.safe_text(getattr(event, "location", ""))},
             "isAllDay": bool(getattr(event, "is_all_day", False)),
             "webLink": "",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
+from typing import Any
 from zoneinfo import ZoneInfo
 
 
@@ -97,6 +98,20 @@ def to_utc_iso(
         dt = dt.replace(tzinfo=zone)
 
     return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def format_utc_iso(value: Any) -> str:
+    """宽松地将 EWS 时间值格式化为 UTC ISO 字符串。"""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if hasattr(value, "astimezone"):
+        try:
+            return value.astimezone(UTC).isoformat()
+        except Exception:
+            return value.isoformat()
+    return str(value)
 
 
 def normalize_query_datetime_with_mailbox_timezone(value: str, mailbox_time_zone: str | None) -> str:
