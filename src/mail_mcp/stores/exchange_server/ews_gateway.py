@@ -108,9 +108,6 @@ class EwsGateway(GatewayBase):
         resolved = str(time_zone_info.get("time_zone", "") or "").strip()
         return resolved or None
 
-    def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
-        return []
-
     def _build_account(self) -> Account:
         if self._account is not None:
             return self._account

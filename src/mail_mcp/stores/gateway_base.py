@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import os
 from datetime import UTC, datetime, tzinfo
 from typing import Any, Callable
@@ -9,14 +8,9 @@ from urllib.parse import quote
 
 from cachetools import TTLCache
 from mail_mcp.utils.email_helper import EmailHelper
-from mail_mcp.utils.search_token_tools import expand_search_tokens
 
 from ..models import map_graph_calendar_event, map_graph_message
 from ..utils.datetime_utils import parse_iso_datetime, resolve_zone_info
-from ..utils.token_log_utils import log_token_value
-
-GRAPH_QUERY_SAFE = "()':,=-"
-LOGGER = logging.getLogger("mail_mcp")
 
 
 class GatewayBase:
@@ -163,57 +157,6 @@ class GatewayBase:
             return dt.astimezone(zone) if dt.tzinfo else dt.replace(tzinfo=zone)
 
         raise ValueError(f"invalid time zone: {(request_time_zone or "").strip() or "<empty>"}")
-
-    def list_tenant_users(self, search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
-        """按关键词列出租户用户（仅返回含邮箱的用户）。"""
-        safe_limit = self._normalize_limit(limit)
-        headers = {"ConsistencyLevel": "eventual"}
-        base_query_prefix = (
-            f"/users?$top={safe_limit}"
-            "&$count=true"
-            "&$select=id,displayName,mail,userPrincipalName"
-        )
-
-        def fetch_users(filter_expr: str) -> list[dict[str, Any]]:
-            query = (
-                f"{base_query_prefix}"
-                f"&$filter={quote(filter_expr, safe=GRAPH_QUERY_SAFE)}"
-                "&$orderby=displayName"
-            )
-            payload = self._request("GET", query, headers=headers)
-            return payload.get("value", [])
-
-        search_value = (search or "").strip()
-        if search_value:
-            tokens = [token for token in search_value.split() if token]
-            if tokens:
-                expanded_tokens = expand_search_tokens(tokens)
-                token_clauses: list[str] = []
-                for token in expanded_tokens:
-                    escaped = token.replace("'", "''")
-                    token_clauses.append(
-                        "("
-                        f"startswith(displayName,'{escaped}') "
-                        f"or startswith(mail,'{escaped}') "
-                        f"or startswith(userPrincipalName,'{escaped}')"
-                        ")"
-                    )
-                filter_expr = "mail ne null and (" + " or ".join(token_clauses) + ")"
-                users = fetch_users(filter_expr)
-            else:
-                users = fetch_users("mail ne null")
-        else:
-            users = fetch_users("mail ne null")
-
-        return [
-            {
-                "id": str(user.get("id", "") or ""),
-                "displayName": str(user.get("displayName", "") or ""),
-                "mail": str(user.get("mail", "") or ""),
-                "userPrincipalName": str(user.get("userPrincipalName", "") or ""),
-            }
-            for user in users
-        ]
 
     def get_user_time_zone(self, fallback: str = "UTC") -> dict[str, str]:
         """读取并缓存当前用户邮箱时区，失败时返回回退值。"""

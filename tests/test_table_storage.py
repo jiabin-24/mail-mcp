@@ -17,7 +17,7 @@ class BuildTableContextFromEnvTests(unittest.TestCase):
         clear=False,
     )
     @patch("mail_mcp.stores.table_storage.TableServiceClient")
-    @patch("mail_mcp.stores.table_storage.ClientSecretCredential")
+    @patch("mail_mcp.utils.azure_credential.ClientSecretCredential")
     def test_optional_returns_none_when_table_creation_is_unauthorized(
         self,
         mock_credential_cls,

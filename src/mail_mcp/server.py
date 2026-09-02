@@ -15,8 +15,7 @@ from .stores.attachment_store import AttachmentStore
 from .stores.exchange_online.calendar_store import CalendarStore
 from .stores.exchange_online.email_store import EmailStore
 from .stores.exchange_online.email_send_queue_store import EmailSendQueueStore
-from .stores.exchange_online.graph_gateway import GraphGateway
-from .stores.gateway_base import GatewayBase
+from .stores.graph_application_store import GraphApplicationStore
 from .stores.oauth_client_store import build_oauth_client_store_from_env
 from .stores.oauth_token_store import build_oauth_token_store_from_env
 from .tools.calendar_tools import register_calendar_tools
@@ -26,6 +25,7 @@ from .tools.email_queue_tools import register_email_queue_tools
 from .utils.oauth_dynamic_provider import DynamicOAuthProvider, get_dynamic_oauth_config_from_env
 from .utils.request_token_provider import RequestTokenProvider
 from .utils.biz_logger import configure_default_loggers
+from .utils.azure_credential import build_client_secret_credential_from_env
 from .utils.oauth_middleware import OAuthTokenLogMiddleware
 
 _ROOT_DIR = Path(
@@ -68,6 +68,7 @@ TOKEN_PROVIDER = RequestTokenProvider.as_callable()
 EMAIL_STORE, CALENDAR_STORE, EMAIL_SEND_QUEUE_STORE = _build_store_backend(TOKEN_PROVIDER)
 ATTACHMENT_STORE = AttachmentStore()
 COMMON_BACKEND_GATEWAY = EMAIL_STORE
+GRAPH_APPLICATION_STORE = GraphApplicationStore(build_client_secret_credential_from_env())
 
 _oauth_provider: DynamicOAuthProvider | None = None
 _auth_settings: AuthSettings | None = None
@@ -159,7 +160,7 @@ register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
 @APP.tool()
 def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
     """List tenant users and their mailbox addresses to resolve recipients or shared mailboxes."""
-    return COMMON_BACKEND_GATEWAY.list_tenant_users(search=search, limit=limit)
+    return GRAPH_APPLICATION_STORE.list_tenant_users(search=search, limit=limit)
 
 # 运行时对外暴露的 MCP 工具入口，后续按具体存储实现注册邮件、日历和队列能力。
 _AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"

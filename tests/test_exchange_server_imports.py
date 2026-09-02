@@ -30,7 +30,6 @@ def test_exchange_server_ews_gateway_uses_fixed_plus8_timezone_and_empty_tenant_
 
     assert store.get_user_time_zone() == {"time_zone": "Asia/Shanghai", "source": "ews_fixed"}
     assert store.get_mailbox_time_zone_if_available() == "Asia/Shanghai"
-    assert store.list_tenant_users() == []
 
 
 def test_exchange_server_base_credentials_exchange_via_obo(monkeypatch) -> None:

@@ -10,6 +10,7 @@ from azure.core.exceptions import ResourceExistsError
 from azure.data.tables import TableClient, TableServiceClient
 from azure.identity import ClientSecretCredential
 
+from ..utils.azure_credential import build_client_secret_credential_from_env
 from ..utils.datetime_utils import to_utc_iso
 
 
@@ -242,11 +243,7 @@ def build_table_context_from_env(table_name: str, *, optional: bool = False) -> 
         raise ValueError(f"缺少 Azure Table 环境变量: {', '.join(missing)}")
 
     account_url = f"https://{account_name}.table.core.windows.net"
-    credential = ClientSecretCredential(
-        tenant_id=tenant_id,
-        client_id=client_id,
-        client_secret=client_secret,
-    )
+    credential = build_client_secret_credential_from_env()
     service_client = TableServiceClient(endpoint=account_url, credential=credential)
     table_client = service_client.get_table_client(table_name=table_name)
     if not _ensure_table_exists(table_client, optional=optional):
