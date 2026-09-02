@@ -72,6 +72,7 @@ _auth_settings: AuthSettings | None = None
 _oauth_client_store = None
 _oauth_token_store = None
 _oauth_config = get_dynamic_oauth_config_from_env()
+
 # 仅当启用了动态 OAuth 配置时，才注册 OAuth 客户端/令牌存储与鉴权服务。
 if _oauth_config:
     _oauth_client_store = build_oauth_client_store_from_env()
@@ -157,12 +158,6 @@ register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
 def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> list[dict[str, str]]:
     """List tenant users and their mailbox addresses to resolve recipients or shared mailboxes."""
     return COMMON_BACKEND_GATEWAY.list_tenant_users(search=search, limit=limit)
-
-
-@APP.tool()
-def mailbox_get_user_time_zone() -> dict[str, str]:
-    """Get the current mailbox timezone configuration."""
-    return COMMON_BACKEND_GATEWAY.get_user_time_zone()
 
 # 运行时对外暴露的 MCP 工具入口，后续按具体存储实现注册邮件、日历和队列能力。
 _AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"
