@@ -81,33 +81,24 @@ last_updated: 2026-09-02
 * [ ] 撤销草稿：`mailbox_revoke_draft(draft_id)`（单独调用）
 * [ ] 定时发送发件人固定为当前登录用户
 
-多轮附件指令（最高优先级）：
+附件流程（最高优先级）：
 
-* [ ] 当前对话已创建邮件草稿后，用户再说“发送附件”“上传附件”“添加附件”“带附件发送”或同义表达时，必须解释为“给当前草稿上传附件”
-* [ ] 必须复用当前发送意图中 `mailbox_compose` 返回的草稿 `id`、`webLink` 和 `attachment_upload_url`，禁止再次创建草稿
-* [ ] 必须直接输出以下固定响应，并将 `{attachment_upload_url}` 替换为 `mailbox_compose` 返回的真实 `attachment_upload_url`：
+* [ ] 同一发送意图只创建一次草稿，始终复用 `mailbox_compose` 返回的 `id`、`webLink` 和 `attachment_upload_url`
+* [ ] 每次创建草稿后，发送摘要必须显示 `[点此上传附件](attachment_upload_url 的真实值)`；URL 必须逐字取自本次工具结果，不得输出占位符、自行拼接或改写；缺失时提示“未获取到附件上传地址”
+* [ ] 上传入口不代表已有附件；调用 `mailbox_list_draft_attachments` 前不展示“已上传附件”，查询后才展示“无”或真实文件名
+* [ ] 用户要求上传附件时，若尚无草稿则先创建，然后输出：
 
 ```markdown
 ## 上传附件
 
-请打开以下链接，为当前邮件草稿上传附件：
-
-{attachment_upload_url}
+请[点此上传附件](使用本次 mailbox_compose 返回的 attachment_upload_url 真实值)。
 
 上传完成后回复“继续”，我会先核验附件，再请你确认发送。
 ```
 
-* [ ] 用户需要上传附件时，必须先创建邮件草稿，并从 `mailbox_compose` 返回结果中取得草稿 `id`、`webLink` 和 `attachment_upload_url`
-* [ ] 向用户返回 `mailbox_compose` 结果中的 `attachment_upload_url`，禁止自行拼接 Host、草稿 `id` 或附件路径
-* [ ] 返回附件上传链接时，必须在同一条信息中明确提示用户：“在链接上传完成后再继续确认发送即可”
 * [ ] 不通过 LLM 上下文、Topic 或 MCP 邮件工具传输附件内容；附件由用户通过上述链接上传
-* [ ] 同一发送意图只创建一次草稿，后续附件上传、草稿更新和发送均复用同一个草稿 `id`
-
-附件上传后的对话恢复（Checklist）：
-
-* [ ] 保留当前发送意图的草稿 `id` 和 `webLink`；用户输入“继续”“已上传”等表达时直接恢复，无需重复描述
-* [ ] 使用 `mailbox_list_draft_attachments(message_id)` 和草稿 `id` 查询附件；查到后列出真实文件名与链接并询问“是否发送？”，不得依据用户口述或上传页面状态臆测
-* [ ] 附件为空、查询失败或草稿不明确时，停止发送并提示用户检查或澄清
+* [ ] 用户输入“继续”“已上传”后，立即用当前草稿 `id` 调用 `mailbox_list_draft_attachments`。若查到附件，再调用一次 `mailbox_update_draft`，将附件追加在正文末尾（HTML）区块；若已有附件区块则整体替换，禁止重复追加
+* [ ] 附件为空、查询失败、草稿不明确或任一附件缺少 `fileUrl` 时停止；更新成功后才列出附件并询问“是否发送？”
 
 ## 3. 发送前校验（必须）
 
@@ -130,13 +121,6 @@ last_updated: 2026-09-02
 * [ ] 草稿链接必须输出为 `<a href="{webLink}" target="_blank" rel="noopener noreferrer">{subject}</a>`
 * [ ] 会议链接必须输出为 `<a href="{eventWebLink}" target="_blank" rel="noopener noreferrer">{eventSubject}</a>`
 * [ ] 附件链接必须输出为 `<a href="{fileUrl}" target="_blank" rel="noopener noreferrer">{fileName}</a>`
-
-正文生成要求：
-
-* 上传到邮件草稿的原生附件默认只在发送摘要中列出文件名，不在正文中臆造附件链接
-* 仅当附件实际存储在 SharePoint、OneDrive 或其他文件服务且 API 返回收件人可访问的 `fileUrl` 时，才将附件链接追加到正文末尾，并与原正文保留空行
-* 如果正文已有附件链接区块，更新时应整体覆盖原区块，避免重复追加
-* 附件区块由确定性模板生成，禁止由 LLM 自由改写文件名或 URL
 
 校验通过后，必须展示最终发送摘要并请求二次确认；仅在用户明确确认后发送。用户确认后不得再由 LLM 生成、补写或改写主题、正文、收件人和附件信息；发送前仅允许重新查询附件状态做一致性校验，一致时直接发送已确认的草稿，不一致时停止发送并重新请求确认。
 
@@ -180,8 +164,8 @@ last_updated: 2026-09-02
 * 抄送：
 * 主题（草稿）：{draftLink}
 * 会议链接：{eventLink}
-* 附件：{attachment_upload_url}（取自 `mailbox_compose` 返回结果），若附件为空，则输出 “上传附件”
+* 附件上传：<a href="{attachment_upload_url}" target="_blank">点此上传附件</a>
+* 已上传附件：无 / {真实附件文件名列表}（仅在调用 `mailbox_list_draft_attachments` 后输出）
 * 正文：
 	> {body}
-* 校验结果：通过 / 不通过
 ```
