@@ -46,7 +46,9 @@ class CalendarStore(EwsGateway):
         if req.is_all_day:
             event.is_all_day = True
         event.save()
-        return self._map_event(event)
+        result = self._map_event(event)
+        result["draft_id"] = result["id"]
+        return result
 
     def update_calendar_event(self, req: CalendarUpdateEventInput) -> dict[str, Any] | None:
         event = self._get_event_or_none(req.event_id)

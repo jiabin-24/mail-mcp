@@ -35,8 +35,7 @@ def test_graph_gateway_delegates_requests_to_reusable_client() -> None:
     )
 
 
-def test_create_draft_returns_configured_attachment_upload_url(monkeypatch) -> None:
-    monkeypatch.setenv("MAIL_ATTACHMENT_SERVICE_HOST", "https://attachments.example.com/")
+def test_create_draft_leaves_attachment_upload_url_to_tool_layer() -> None:
     store = EmailStore(lambda: "token")
     store._request = MagicMock(
         return_value={
@@ -56,6 +55,5 @@ def test_create_draft_returns_configured_attachment_upload_url(monkeypatch) -> N
         )
     )
 
-    assert result["attachment_upload_url"] == (
-        "https://attachments.example.com/draft%2Fid/attachments?uploaded=1"
-    )
+    assert result["draft_id"] == "draft/id"
+    assert "attachment_upload_url" not in result

@@ -1,5 +1,5 @@
 from ..stores.exchange_online.email_store import EmailStore
-from ..stores.attachment_store import AttachmentStore
+from ..stores.attachment_store import AttachmentStore, build_attachment_upload_url
 from ..tools.tool_error_handler import tool_exception_logging
 from ..schemas.request_models import (
     MailboxComposeInput,
@@ -11,6 +11,15 @@ from ..schemas.request_models import (
     MailboxUpdateDraftInput,
     validate_input,
 )
+
+
+def _add_attachment_upload_url(result: dict) -> dict:
+    draft_id = result.get("draft_id")
+    if not draft_id:
+        raise ValueError("created draft did not return an id")
+    result["attachment_upload_url"] = build_attachment_upload_url(draft_id)
+    return result
+
 
 def register_email_tools(
     app,
@@ -92,7 +101,7 @@ def register_email_tools(
                 "bcc": bcc,
             },
         )
-        return email_store.create_draft(req)
+        return _add_attachment_upload_url(email_store.create_draft(req))
 
     @app.tool()
     @tool_exception_logging
@@ -102,7 +111,7 @@ def register_email_tools(
             MailboxReplyComposeInput,
             {"message_id": message_id, "subject": subject, "body": body},
         )
-        return email_store.create_reply_draft(req)
+        return _add_attachment_upload_url(email_store.create_reply_draft(req))
 
     @app.tool()
     @tool_exception_logging

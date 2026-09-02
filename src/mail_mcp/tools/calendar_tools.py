@@ -2,6 +2,7 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
+from ..stores.attachment_store import build_attachment_upload_url
 from ..stores.exchange_online.calendar_store import CalendarStore
 from ..tools.tool_error_handler import tool_exception_logging
 from ..schemas.request_models import (
@@ -73,7 +74,12 @@ def register_calendar_tools(app: FastMCP, calendar_store: CalendarStore) -> None
                 "calendar_id": calendar_id,
             },
         )
-        return calendar_store.create_calendar_event(req)
+        result = calendar_store.create_calendar_event(req)
+        event_id = result.get("draft_id")
+        if not event_id:
+            raise ValueError("created calendar event did not return an id")
+        result["attachment_upload_url"] = build_attachment_upload_url(event_id)
+        return result
 
     @app.tool()
     @tool_exception_logging
