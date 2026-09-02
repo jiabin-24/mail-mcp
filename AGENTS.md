@@ -80,10 +80,26 @@ last_updated: 2026-09-02
 * [ ] 撤销定时任务：`mailbox_revoke_email_draft_send_job(job_id)`
 * [ ] 撤销草稿：`mailbox_revoke_draft(draft_id)`（单独调用）
 * [ ] 定时发送发件人固定为当前登录用户
-* [ ] 用户需要上传附件时，必须先创建邮件草稿，并从草稿返回结果中取得草稿 `id`
-* [ ] 将草稿 `id` 作为 `messageId`，向用户返回附件上传链接：`https://app-mailattach-dev-6iuhcfhr5qgxo.azurewebsites.net/mails/{messageId}/attachments`
+
+多轮附件指令（最高优先级）：
+
+* [ ] 当前对话已创建邮件草稿后，用户再说“发送附件”“上传附件”“添加附件”“带附件发送”或同义表达时，必须解释为“给当前草稿上传附件”
+* [ ] 必须复用当前发送意图中 `mailbox_compose` 返回的草稿 `id`、`webLink` 和 `attachment_upload_url`，禁止再次创建草稿
+* [ ] 必须直接输出以下固定响应，并将 `{attachment_upload_url}` 替换为 `mailbox_compose` 返回的真实 `attachment_upload_url`：
+
+```markdown
+## 上传附件
+
+请打开以下链接，为当前邮件草稿上传附件：
+
+{attachment_upload_url}
+
+上传完成后回复“继续”，我会先核验附件，再请你确认发送。
+```
+
+* [ ] 用户需要上传附件时，必须先创建邮件草稿，并从 `mailbox_compose` 返回结果中取得草稿 `id`、`webLink` 和 `attachment_upload_url`
+* [ ] 向用户返回 `mailbox_compose` 结果中的 `attachment_upload_url`，禁止自行拼接 Host、草稿 `id` 或附件路径
 * [ ] 返回附件上传链接时，必须在同一条信息中明确提示用户：“在链接上传完成后再继续确认发送即可”
-* [ ] `messageId` 必须使用当前发送意图所创建的草稿 `id`
 * [ ] 不通过 LLM 上下文、Topic 或 MCP 邮件工具传输附件内容；附件由用户通过上述链接上传
 * [ ] 同一发送意图只创建一次草稿，后续附件上传、草稿更新和发送均复用同一个草稿 `id`
 
@@ -164,8 +180,7 @@ last_updated: 2026-09-02
 * 抄送：
 * 主题（草稿）：{draftLink}
 * 会议链接：{eventLink}
-* 附件：{attachmentLink}
-* 发送时间：
+* 附件：{attachment_upload_url}（取自 `mailbox_compose` 返回结果），若附件为空，则输出 “上传附件”
 * 正文：
 	> {body}
 * 校验结果：通过 / 不通过

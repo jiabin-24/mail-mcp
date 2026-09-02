@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import quote
 
 from .graph_gateway import GraphGateway
+from ..attachment_store import build_attachment_upload_url
 from ...models import map_graph_message
 from ...schemas.request_models import (
     MailboxComposeInput,
@@ -110,8 +111,10 @@ class EmailStore(GraphGateway):
             },
         )
         result = map_graph_message(payload, folder="drafts")
-        result["draft_id"] = payload.get("id", "")
+        draft_id = str(payload.get("id", "") or "")
+        result["draft_id"] = draft_id
         result["webLink"] = payload.get("webLink", "")
+        result["attachment_upload_url"] = build_attachment_upload_url(draft_id)
         return result
 
     def create_reply_draft(self, req: MailboxReplyComposeInput) -> dict[str, Any]:

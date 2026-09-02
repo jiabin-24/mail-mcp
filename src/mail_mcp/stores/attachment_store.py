@@ -12,6 +12,18 @@ DEFAULT_ATTACHMENT_SERVICE_HOST = (
 )
 
 
+def build_attachment_upload_url(message_id: str, host: str | None = None) -> str:
+    configured_host = host or os.getenv(
+        "MAIL_ATTACHMENT_SERVICE_HOST",
+        DEFAULT_ATTACHMENT_SERVICE_HOST,
+    )
+    normalized_host = configured_host.strip().rstrip("/")
+    if not normalized_host:
+        raise ValueError("MAIL_ATTACHMENT_SERVICE_HOST must not be empty")
+    encoded_message_id = quote(message_id, safe="")
+    return f"{normalized_host}/{encoded_message_id}/attachments"
+
+
 class AttachmentStore:
     """Access draft attachments managed by the external upload service."""
 
