@@ -25,7 +25,6 @@ class GatewayBase:
     def __init__(self, token_provider: Callable[[], str | None]) -> None:
         """初始化网关基础能力（令牌提供器、Graph 地址与缓存配置）。"""
         self._token_provider = token_provider
-        self._graph_base = os.getenv("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0")
         self._cache_ttl = max(0, int(os.getenv("GRAPH_CACHE_TTL_SECONDS") or 300))
         self._cache: TTLCache[Any, Any] = TTLCache(maxsize=128, ttl=max(1, self._cache_ttl))
 
