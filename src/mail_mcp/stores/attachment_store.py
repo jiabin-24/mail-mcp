@@ -21,7 +21,7 @@ def build_attachment_upload_url(message_id: str, host: str | None = None) -> str
     if not normalized_host:
         raise ValueError("MAIL_ATTACHMENT_SERVICE_HOST must not be empty")
     encoded_message_id = quote(message_id, safe="")
-    return f"{normalized_host}/{encoded_message_id}/attachments"
+    return f"{normalized_host}/mails/{encoded_message_id}/attachments"
 
 
 class AttachmentStore:
