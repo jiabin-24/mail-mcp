@@ -179,6 +179,12 @@ Azure Table 所需 RBAC（Service Principal）：
 - 建议同时配置 `Mail.ReadWrite`（Application）用于草稿与发送流程兼容
 - 以上 Application 权限需管理员同意（Admin consent）
 
+查询租户用户（Service Principal）所需 Graph 应用权限：
+
+- `User.ReadBasic.All`（Application，最小权限）
+- 需要管理员同意（Admin consent）
+- 当前实现通过 `ClientSecretCredential` 获取 `https://graph.microsoft.com/.default` token，并调用 `GET /users`
+
 当前实现固定使用 `/me` 路由访问 Outlook 邮箱。
 
 ### 2.1.1 OAuth 2.0 Dynamic discovery
