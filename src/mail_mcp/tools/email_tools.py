@@ -1,4 +1,5 @@
 from ..stores.exchange_online.email_store import EmailStore
+from ..stores.attachment_store import AttachmentStore
 from ..tools.tool_error_handler import tool_exception_logging
 from ..schemas.request_models import (
     MailboxComposeInput,
@@ -11,7 +12,11 @@ from ..schemas.request_models import (
     validate_input,
 )
 
-def register_email_tools(app, email_store: EmailStore) -> None:
+def register_email_tools(
+    app,
+    email_store: EmailStore,
+    attachment_store: AttachmentStore,
+) -> None:
     @app.tool()
     @tool_exception_logging
     def mailbox_list_folders() -> list[str]:
@@ -37,6 +42,13 @@ def register_email_tools(app, email_store: EmailStore) -> None:
         if not message:
             raise ValueError(f"message not found: {req.message_id}")
         return message
+
+    @app.tool()
+    @tool_exception_logging
+    def mailbox_list_draft_attachments(message_id: str) -> list[dict] | dict:
+        """List uploaded attachment names and links for the current draft."""
+        req = validate_input(MailboxGetMessageInput, {"message_id": message_id})
+        return attachment_store.list_message_attachments(req.message_id)
 
     @app.tool()
     @tool_exception_logging

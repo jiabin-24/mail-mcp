@@ -89,6 +89,7 @@ az acr repository show-tags \
 
 - `MAIL_MCP_BACKEND`（默认 `graph`，可选 `graph` / `ews`；决定使用 Microsoft Graph 还是 Exchange Server EWS）
 - `GRAPH_BASE_URL`（默认 `https://graph.microsoft.com/v1.0`）
+- `MAIL_ATTACHMENT_SERVICE_HOST`（草稿附件上传/查询服务 host，默认 `https://app-mailattach-dev-6iuhcfhr5qgxo.azurewebsites.net`）
 - `DELEGATED_TOKEN_LOG_MODE`（默认 `masked`，可选 `masked` / `full` / `none`）
 - `DELEGATED_TOKEN_CACHE_TTL_SECONDS`（默认 `300`，token 校验结果缓存秒数）
 - `MCP_EXPOSE_AGENTS_MD`（默认 `false`，设置为 `true` 后对外暴露 `mailbox_get_agents_md()` 工具，返回仓库根目录 `AGENTS.md` 内容）
@@ -146,6 +147,7 @@ EXCHANGE_SERVER_TIME_ZONE=Asia/Shanghai
 - `MCP_HOST` / `MCP_PORT` / `MCP_PATH`
 - `MAIL_MCP_BACKEND`（`graph` 或 `ews`）
 - `GRAPH_BASE_URL`
+- `MAIL_ATTACHMENT_SERVICE_HOST`
 - `DELEGATED_TOKEN_LOG_MODE`
 - `DELEGATED_TOKEN_CACHE_TTL_SECONDS`
 - `MCP_EXPOSE_AGENTS_MD`

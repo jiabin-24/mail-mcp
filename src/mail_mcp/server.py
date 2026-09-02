@@ -11,6 +11,7 @@ from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 
 from .environment_bootstrap import EnvironmentBootstrapper
+from .stores.attachment_store import AttachmentStore
 from .stores.exchange_online.calendar_store import CalendarStore
 from .stores.exchange_online.email_store import EmailStore
 from .stores.exchange_online.email_send_queue_store import EmailSendQueueStore
@@ -65,6 +66,7 @@ configure_default_loggers()
 # 统一构造 token provider 与后端存储实例，供邮件/日历/队列工具共用。
 TOKEN_PROVIDER = RequestTokenProvider.as_callable()
 EMAIL_STORE, CALENDAR_STORE, EMAIL_SEND_QUEUE_STORE = _build_store_backend(TOKEN_PROVIDER)
+ATTACHMENT_STORE = AttachmentStore()
 COMMON_BACKEND_GATEWAY = EMAIL_STORE
 
 _oauth_provider: DynamicOAuthProvider | None = None
@@ -150,7 +152,7 @@ APP = FastMCP(
 
 register_calendar_tools(APP, CALENDAR_STORE)
 register_common_tools(APP, COMMON_BACKEND_GATEWAY)
-register_email_tools(APP, EMAIL_STORE)
+register_email_tools(APP, EMAIL_STORE, ATTACHMENT_STORE)
 register_email_queue_tools(APP, EMAIL_SEND_QUEUE_STORE, EMAIL_STORE)
 
 
