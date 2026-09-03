@@ -138,9 +138,11 @@ class EmailStore(EwsGateway):
             cc_recipients=EmailHelper.mailboxes_from_addresses(req.cc),
             bcc_recipients=EmailHelper.mailboxes_from_addresses(req.bcc),
         )
-        message.save()
-        result = self._map_message(message, folder="drafts")
-        result["draft_id"] = str(message.id)
+        draft = message.save()
+        draft_id = str(draft.id)
+        result = self._map_message(draft, folder="drafts")
+        result["id"] = draft_id
+        result["draft_id"] = draft_id
         result["webLink"] = ""
         return result
 

@@ -104,12 +104,12 @@ def test_exchange_server_create_draft_preserves_html_body(monkeypatch) -> None:
             self.is_draft = True
 
         def save(self):
-            return None
+            return self
 
     monkeypatch.setattr(store, "_build_account", lambda: fake_account)
     monkeypatch.setattr("mail_mcp.stores.exchange_server.email_store.Message", FakeMessage)
 
-    store.create_draft(
+    result = store.create_draft(
         MailboxComposeInput(
             to=["recipient@example.com"],
             subject="HTML draft",
@@ -119,6 +119,8 @@ def test_exchange_server_create_draft_preserves_html_body(monkeypatch) -> None:
 
     assert isinstance(captured["body"], HTMLBody)
     assert str(captured["body"]) == "<p>Hello <strong>world</strong></p>"
+    assert result["id"] == "draft-123"
+    assert result["draft_id"] == "draft-123"
 
 
 def test_exchange_server_email_store_parses_received_datetime_filter() -> None:
