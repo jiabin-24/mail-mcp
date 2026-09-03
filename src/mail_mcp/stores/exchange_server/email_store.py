@@ -166,7 +166,7 @@ class EmailStore(EwsGateway):
         if req.subject is not None:
             message.subject = req.subject
         if req.body is not None:
-            message.body = req.body
+            message.body = HTMLBody(req.body) if self._body_content_type(req.body) == "HTML" else req.body
         if req.to is not None:
             message.to_recipients = EmailHelper.mailboxes_from_addresses(req.to)
         if req.cc is not None:

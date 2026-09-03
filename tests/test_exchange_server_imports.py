@@ -123,6 +123,31 @@ def test_exchange_server_create_draft_preserves_html_body(monkeypatch) -> None:
     assert result["draft_id"] == "draft-123"
 
 
+def test_exchange_server_update_draft_preserves_html_body(monkeypatch) -> None:
+    store = EmailStore(token_provider=lambda: "Bearer my-access-token")
+
+    class FakeMessage:
+        def __init__(self):
+            self.id = "draft-123"
+            self.body = ""
+
+        def save(self):
+            return self
+
+    message = FakeMessage()
+    monkeypatch.setattr(store, "_get_item_by_id", lambda *_args, **_kwargs: message)
+
+    store.update_draft(
+        MailboxUpdateDraftInput(
+            draft_id="draft-123",
+            body="<p>Hello <strong>world</strong></p>",
+        )
+    )
+
+    assert isinstance(message.body, HTMLBody)
+    assert str(message.body) == "<p>Hello <strong>world</strong></p>"
+
+
 def test_exchange_server_email_store_parses_received_datetime_filter() -> None:
     parsed = EmailStore._parse_received_datetime_filter(
         "receivedDateTime ge 2026-08-01T00:00:00+08:00 and receivedDateTime lt 2026-09-01T00:00:00+08:00"
