@@ -92,7 +92,8 @@ az acr repository show-tags \
 - `MAIL_ATTACHMENT_SERVICE_HOST`（草稿附件上传/查询服务 host，默认 `https://app-mailattach-dev-6iuhcfhr5qgxo.azurewebsites.net`）
 - `DELEGATED_TOKEN_LOG_MODE`（默认 `masked`，可选 `masked` / `full` / `none`）
 - `DELEGATED_TOKEN_CACHE_TTL_SECONDS`（默认 `300`，token 校验结果缓存秒数）
-- `MCP_EXPOSE_AGENTS_MD`（默认 `false`，设置为 `true` 后对外暴露 `mailbox_get_agents_md()` 工具，返回仓库根目录 `AGENTS.md` 内容）
+
+服务启动时会固定读取仓库根目录的 `AGENTS.md`，将其作为 MCP 服务级 instructions 随初始化响应提供给客户端，并始终暴露 `mailbox_get_agents_md()` 工具供客户端主动读取。
 
 后端切换示例：
 
@@ -150,7 +151,6 @@ EXCHANGE_SERVER_TIME_ZONE=Asia/Shanghai
 - `MAIL_ATTACHMENT_SERVICE_HOST`
 - `DELEGATED_TOKEN_LOG_MODE`
 - `DELEGATED_TOKEN_CACHE_TTL_SECONDS`
-- `MCP_EXPOSE_AGENTS_MD`
 
 建议仅放在 App Service 的示例（敏感/租户强绑定）：
 

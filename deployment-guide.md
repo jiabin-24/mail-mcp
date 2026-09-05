@@ -240,7 +240,7 @@ az webapp log tail --name $env:APP --resource-group $env:RG
 
 3. Instructions 设置
     - 打开仓库根目录的 AGENTS.md
-    - 将 AGENTS.md 全部内容复制并粘贴到 Agent 的 Instructions
+    - 本 MCP 会在 `initialize` 响应中自动返回 AGENTS.md；若 Copilot Studio 未采用服务端 instructions，则将 AGENTS.md 全部内容复制并粘贴到 Agent 的 Instructions
     - 保存
 
 4. Knowledge 设置（在 Knowledge 中添加以下 3 个链接：）

@@ -31,7 +31,17 @@ from .utils.oauth_middleware import OAuthTokenLogMiddleware
 _ROOT_DIR = Path(
     (os.getenv("MCP_APP_ROOT") or "").strip() or Path(__file__).resolve().parents[2]
 ).resolve()
+_AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"
 LOGGER = logging.getLogger("mail_mcp")
+
+
+def _load_server_instructions() -> str | None:
+    try:
+        content = _AGENTS_MD_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        LOGGER.warning("MCP instructions unavailable at %s: %s", _AGENTS_MD_PATH, exc)
+        return None
+    return content if content.strip() else None
 
 
 def _build_store_backend(token_provider):
@@ -144,6 +154,7 @@ _schedule_startup_token_cleanup_once()
 
 APP = FastMCP(
     "mail-assistant",
+    instructions=_load_server_instructions(),
     auth_server_provider=_oauth_provider,
     host=os.getenv("MCP_HOST", "0.0.0.0"),
     port=int(os.getenv("MCP_PORT", os.getenv("PORT", "80"))),
@@ -163,8 +174,7 @@ def mailbox_list_tenant_users(search: str | None = None, limit: int = 20) -> lis
     return GRAPH_APPLICATION_STORE.list_tenant_users(search=search, limit=limit)
 
 # 运行时对外暴露的 MCP 工具入口，后续按具体存储实现注册邮件、日历和队列能力。
-_AGENTS_MD_PATH = _ROOT_DIR / "AGENTS.md"
-if (os.getenv("MCP_EXPOSE_AGENTS_MD", "false").strip().lower() == "true") and _AGENTS_MD_PATH.exists():
+if _AGENTS_MD_PATH.exists():
 
     @APP.tool()
     def mailbox_get_agents_md() -> dict[str, str | bool]:
